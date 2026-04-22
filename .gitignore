@@ -1,0 +1,11 @@
+modelzoo/
+datasets/
+outputs/
+cache/
+__pycache__/
+
+.vscode
+tmp*
+
+# 本地 Hugging Face token（勿提交）
+.hf_token
