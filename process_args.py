@@ -42,6 +42,13 @@ def parse_gen():
     parser.add_argument("--v_asym", action="store_true", help="V cache asymmetric quantization")
     parser.add_argument("--w_clip", action="store_true", help="Enable weight clipping")
     parser.add_argument("--a_clip_ratio", type=float, default=1.0, help="Activation clipping ratio")
+    parser.add_argument(
+        "--enable_aq_calibration",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="GPTAQ/fake_quant 风格：为 True 时在权重量化**之前**调用激活 quantizer.configure，"
+        "校准前向会带激活伪量化；默认 True（先激活后权重量化），可用 --no-enable_aq_calibration 切回原 ReQuant 顺序。",
+    )
     parser.add_argument("--k_clip_ratio", type=float, default=1.0, help="K cache clipping ratio")
     parser.add_argument("--v_clip_ratio", type=float, default=1.0, help="V cache clipping ratio")
     parser.add_argument("--export_to_et", action="store_true", help="Export quantized model (TODO)")
@@ -66,7 +73,7 @@ def parse_gen():
         "--alpha",
         type=float,
         default=0.25,
-        help="GPTAQ / dXXT correction strength (P-matrix & Phase-2); scripts often use 0.25",
+        help="GPTAQ dXXT correction strength for P-matrix (Phase-1); scripts often use 0.25",
     )
     parser.add_argument("--refine_sweeps", type=int, default=3, help="Number of coordinate descent sweeps in post-GPTQ refinement (0 to disable)")
     parser.add_argument("--refine_candidates", type=int, default=2, help="Number of grid neighbours to evaluate per direction in refinement")
@@ -75,6 +82,12 @@ def parse_gen():
         type=float,
         default=0.0,
         help="gptaq_refined: anchor regularization lambda for Phase-2 (scheme B) to keep q close to GPTAQ init",
+    )
+    parser.add_argument(
+        "--refine_beta",
+        type=float,
+        default=0.25,
+        help="gptaq_refined Phase-2: scaling factor for dXXT correction term in refinement gradient",
     )
     parser.add_argument(
         "--refine_min_gain_eps",

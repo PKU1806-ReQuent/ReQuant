@@ -330,6 +330,7 @@ def gptq_refined_fwrd_data_parallel(
     refine_sweeps = getattr(args, "refine_sweeps", 3)
     refine_candidates = getattr(args, "refine_candidates", 2)
     refine_anchor_lambda = getattr(args, "refine_anchor_lambda", 0.0)
+    refine_beta = getattr(args, "refine_beta", 0.25)
     refine_min_gain_eps = args.refine_min_gain_eps
     refine_early_stop_consecutive_cols = getattr(
         args, "refine_early_stop_consecutive_cols", 0
@@ -478,6 +479,7 @@ def gptq_refined_fwrd_data_parallel(
                         refine_sweeps=refine_sweeps,
                         refine_candidates=refine_candidates,
                         refine_anchor_lambda=refine_anchor_lambda,
+                        refine_beta=refine_beta,
                         refine_min_gain_eps=refine_min_gain_eps,
                         refine_early_stop_consecutive_cols=refine_early_stop_consecutive_cols,
                     )

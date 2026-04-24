@@ -124,7 +124,7 @@ class GPTAQRefined:
     # ---- Phase-2: vectorised coordinate descent -------------------------
 
     def _refine(self, W_orig, Q, W_int, Scale, W_zero, H_orig, dXXT,
-                alpha, min_int, max_int, num_candidates, num_sweeps,
+                beta, min_int, max_int, num_candidates, num_sweeps,
                 lambda_anchor=0.0,
                 min_gain_eps=0.0,
                 early_stop_consecutive_cols=0):
@@ -146,9 +146,9 @@ class GPTAQRefined:
         E = W_orig - Q
         G = E @ H_orig                               # g̃ = H e
 
-        has_correction = dXXT is not None and alpha > 0
+        has_correction = dXXT is not None
         if has_correction:
-            G += alpha * (W_orig @ dXXT)              # g̃ += α dXXT^T w (w fixed)
+            G += beta * (W_orig @ dXXT)              # g̃ += beta * dXXT^T w (w fixed)
 
         H_diag = torch.diag(H_orig)                  # [d]
         rdtype = G.dtype
@@ -240,6 +240,7 @@ class GPTAQRefined:
         refine_sweeps=3,
         refine_candidates=2,
         refine_anchor_lambda=0.0,
+        refine_beta=1.0,
         refine_min_gain_eps=0.0,
         refine_early_stop_consecutive_cols=0,
     ):
@@ -403,13 +404,14 @@ class GPTAQRefined:
                 layer_gain_scale.item()
             )
             logging.info(
-                "Phase-2 refinement: sweeps=%d, candidates=%d, alpha=%.3f, "
+                "Phase-2 refinement: sweeps=%d, candidates=%d, alpha=%.3f, beta=%.3f, "
                 "anchor_lambda=%.4g, min_gain_eps=%.4g (layer=%.4g), "
                 "early_stop_consecutive_cols=%d, "
                 "dXXT_correction=%s",
                 refine_sweeps,
                 refine_candidates,
                 alpha,
+                refine_beta,
                 refine_anchor_lambda,
                 refine_min_gain_eps,
                 min_gain_eps_layer,
@@ -424,7 +426,7 @@ class GPTAQRefined:
                 Zero,
                 H_orig,
                 dXXT_refine,
-                alpha,
+                refine_beta,
                 min_int,
                 max_int,
                 refine_candidates,
@@ -650,6 +652,7 @@ def gptq_refined_fwrd(args, analyzer: model_utils.ModelAnalyzer, dataloader, dev
                     refine_sweeps=refine_sweeps,
                     refine_candidates=refine_candidates,
                     refine_anchor_lambda=refine_anchor_lambda,
+                    refine_beta=getattr(args, "refine_beta", 0.25),
                     refine_min_gain_eps=refine_min_gain_eps,
                     refine_early_stop_consecutive_cols=refine_early_stop_consecutive_cols,
                 )
