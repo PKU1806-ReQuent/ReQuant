@@ -8,6 +8,7 @@
 # This code is based on QuaRot(https://github.com/spcl/QuaRot/tree/main/quarot).
 # Licensed under Apache License 2.0.
 
+import logging
 import math
 
 import torch
@@ -535,6 +536,46 @@ def find_qlayers(
             )
         )
     return res
+
+
+def configure_actquant_from_args(args, model: torch.nn.Module) -> None:
+    """
+    Configure ``ActQuantWrapper`` input/output quantizers from ``args`` (``a_bits``, ``v_bits``, …).
+
+    Matches the ``add_aq`` loop in ``GPTAQ/fake_quant/main.py``: per-layer ``quantizer.configure`` /
+    ``out_quantizer.configure`` for ``v_proj`` when ``v_bits < 16``, skip ``lm_head`` input quant.
+    """
+    if args.a_bits >= 16 and args.v_bits >= 16:
+        return
+    qlayers = find_qlayers(model, layers=[ActQuantWrapper])
+    for name in qlayers:
+        layer_input_bits = args.a_bits
+        layer_groupsize = args.a_groupsize
+        layer_a_sym = not (args.a_asym)
+
+        if "v_proj" in name and args.v_bits < 16:
+            qlayers[name].out_quantizer.configure(
+                bits=args.v_bits,
+                groupsize=args.v_groupsize,
+                sym=not (args.v_asym),
+                clip_ratio=args.v_clip_ratio,
+            )
+
+        if "lm_head" in name:
+            layer_input_bits = 16
+
+        qlayers[name].quantizer.configure(
+            bits=layer_input_bits,
+            groupsize=layer_groupsize,
+            sym=layer_a_sym,
+            clip_ratio=args.a_clip_ratio,
+        )
+    logging.info(
+        "Configured ActQuantWrapper quantizers: a_bits=%s v_bits=%s (layers=%d)",
+        args.a_bits,
+        args.v_bits,
+        len(qlayers),
+    )
 
 
 def disable_act_quant(module):
