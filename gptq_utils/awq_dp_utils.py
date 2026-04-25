@@ -27,8 +27,9 @@ from gptq_utils.dp_common import (
     capture_calibration_state,
     local_sample_indices,
     propagate_layer_inputs,
+    run_layer_sample,
 )
-from requant import requant_layer
+from requant import FPInputsCache, requant_layer
 from utils import dist_utils, memory_utils, model_utils, quant_utils
 
 
@@ -229,8 +230,10 @@ def awq_fwrd_data_parallel(
         module.to(dev)
     layers[0] = layers[0].to(dev)
 
+    use_requant = getattr(args, "requant_sweeps", 0) > 0
     state = capture_calibration_state(
-        args, model, layers, dataloader, dev, rank, world_size, group, clone_fp=False
+        args, model, layers, dataloader, dev, rank, world_size, group,
+        clone_fp=use_requant,
     )
     local_js = state.local_indices
     shard_inps = state.shard_inputs
@@ -246,6 +249,7 @@ def awq_fwrd_data_parallel(
         disable=(rank != 0),
     )
     sequential = analyzer.get_sequential_quantizable_module_names()
+    fp_inputs_cache = FPInputsCache(sequential) if use_requant else None
     for i in pbar:
         layer = layers[i].to(dev)
         full = analyzer.get_quantizable_modules(layer)
@@ -286,9 +290,39 @@ def awq_fwrd_data_parallel(
                     fp_weights[f"model.layers.{i}.{name}"] = (
                         _unwrap_linear_module(module).weight.data.float().clone()
                     )
+        if use_requant:
+            assert fp_inputs_cache is not None
+            fp_inputs_cache.add_hook(full)
+            if shard_inps:
+                assert state.fp_inps_shard is not None
+                for k in range(len(local_js)):
+                    run_layer_sample(
+                        layer,
+                        state.fp_inps_shard,
+                        k,
+                        dev,
+                        state.attention_mask,
+                        state.position_ids,
+                        state.position_embeddings,
+                        store=True,
+                    )
+            else:
+                assert state.fp_inps is not None
+                for j in local_js:
+                    run_layer_sample(
+                        layer,
+                        state.fp_inps,
+                        j,
+                        dev,
+                        state.attention_mask,
+                        state.position_ids,
+                        state.position_embeddings,
+                        store=True,
+                    )
+            fp_inputs_cache.clear_hook()
         quant_utils.enable_act_quant(layer, bits_config)
         quantizers.update(_quantize_layer_weights(i, full, sequential, args, rank))
-        if getattr(args, "requant_sweeps", 0) > 0:
+        if use_requant:
             if shard_inps:
                 assert state.inps_shard is not None
                 rq_inps = state.inps_shard
@@ -312,7 +346,9 @@ def awq_fwrd_data_parallel(
                 dev,
                 input_indices=rq_indices,
                 group=group,
+                fp_inputs_cache=fp_inputs_cache.fp_cache,
             )
+            fp_inputs_cache.clear_cache()
         if world_size > 1:
             dist_utils.broadcast_parameters(layer, src=0, group=group)
 

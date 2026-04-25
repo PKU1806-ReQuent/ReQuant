@@ -150,7 +150,7 @@ def requant_from_config(
         basis as ``Q``.
       * ``dXXT`` is the GPTAQ-side cross term ``(X_fp - X_q) @ X_q.T``.
         This is ``-B`` if the paper defines ``B = (X_q - X_fp) @ X_q.T``.
-        Pass ``None`` for pure weight MSE / AWQ / RTN post-hoc.
+        Pass ``None`` only when the caller deliberately wants pure weight MSE.
     """
     if cfg.num_sweeps <= 0 or cfg.num_candidates <= 0:
         return Q, W_int, 0
@@ -566,7 +566,7 @@ class GPTQReQuant:
 
 
 # ---------------------------------------------------------------------------
-#  requant_layer: AWQ / RTN post-processing; collect H with dXXT=None
+#  requant_layer: AWQ / RTN post-processing; collect H and optional dXXT
 # ---------------------------------------------------------------------------
 
 def _recover_w_int(Q: torch.Tensor, quantizer) -> torch.Tensor:
@@ -597,13 +597,15 @@ def requant_layer(
     dev: torch.device,
     input_indices: Optional[Sequence[int]] = None,
     group: Optional[Any] = None,
+    fp_inputs_cache: Optional[dict] = None,
 ):
-    """Collect H on a quantised transformer block and run ``requant_from_config``.
+    """Collect H/dXXT on a quantised block and run ``requant_from_config``.
 
-    Used for AWQ / RTN where H is not accumulated at quant time. ``dXXT`` is
-    ``None``. ``fp_weights`` must contain the original full-precision weights
-    keyed by either ``model.layers.{layer_idx}.{name}`` or ``name``. Weights are
-    updated in place.
+    Used for AWQ / RTN where H is not accumulated at quant time. ``fp_weights``
+    must contain the original full-precision weights keyed by either
+    ``model.layers.{layer_idx}.{name}`` or ``name``. ``fp_inputs_cache`` should
+    contain full-precision inner-linear inputs so the same dXXT term as GPTAQ
+    can be used during ReQuant.
     """
     sweeps = getattr(args, "requant_sweeps", 0)
     if sweeps <= 0:
@@ -617,6 +619,9 @@ def requant_layer(
         return
 
     num_candidates = getattr(args, "requant_candidates", 2)
+    requant_beta = getattr(args, "requant_beta", None)
+    if requant_beta is None:
+        requant_beta = 0.3
     min_gain_eps = getattr(args, "requant_min_gain_eps", 0.003)
     percdamp = getattr(args, "percdamp", 0.01)
     nsamples = inps.shape[0]
@@ -630,22 +635,37 @@ def requant_layer(
         cols = first_mod.weight.shape[1]
 
         H = torch.zeros(cols, cols, device=dev)
+        dXXT = torch.zeros(cols, cols, device=dev)
         n_acc = 0
+        fp_cache = None if fp_inputs_cache is None else fp_inputs_cache.get(names[0])
+        cache_pos = 0
+        use_dxxt = fp_cache is not None
 
-        def _hook(_m, inp, _out, _H=H):
-            nonlocal n_acc
+        def _hook(_m, inp, _out, _H=H, _dXXT=dXXT):
+            nonlocal n_acc, cache_pos
             x = inp[0].detach()
             if x.dim() == 2:
                 x = x.unsqueeze(0)
             tmp = x.shape[0] * x.shape[1]
             x = x.reshape(-1, x.shape[-1]).t()
-            _H.mul_(n_acc / (n_acc + tmp))
+            factor = n_acc / (n_acc + tmp)
+            _H.mul_(factor)
+            if use_dxxt:
+                _dXXT.mul_(factor)
             n_acc += tmp
             x = math.sqrt(2 / n_acc) * x.float()
             _H.add_(x.matmul(x.t()))
+            if use_dxxt:
+                if cache_pos >= len(fp_cache):
+                    raise RuntimeError(
+                        f"requant_layer layers.{layer_idx}.{names[0]}: "
+                        "fp_inputs_cache is shorter than quantized calibration forwards."
+                    )
+                fp_x = fp_cache[cache_pos].to(device=x.device, dtype=x.dtype)
+                _dXXT.add_((fp_x * math.sqrt(2 / n_acc) - x).matmul(x.t()))
+                cache_pos += 1
 
         handle = first_mod.register_forward_hook(_hook)
-        bits_cfg = quant_utils.disable_act_quant(layer)
         for j in sample_indices:
             layer(
                 inps[j].unsqueeze(0).to(dev),
@@ -653,23 +673,26 @@ def requant_layer(
                 position_ids=position_ids,
                 position_embeddings=position_embeddings,
             )
-        quant_utils.enable_act_quant(layer, bits_cfg)
         handle.remove()
 
         if dist.is_available() and dist.is_initialized():
             n_buf = torch.tensor([float(n_acc)], device=dev, dtype=torch.float64)
             H_acc = H * float(n_acc)
+            d_acc = dXXT * float(n_acc)
             dist.all_reduce(n_buf, op=dist.ReduceOp.SUM, group=group)
             dist.all_reduce(H_acc, op=dist.ReduceOp.SUM, group=group)
+            dist.all_reduce(d_acc, op=dist.ReduceOp.SUM, group=group)
             n_total = float(n_buf.item())
             if n_total <= 0:
                 raise RuntimeError(
                     f"requant_layer layers.{layer_idx}: no calibration samples collected."
                 )
             H = H_acc / n_total
+            dXXT = d_acc / n_total
 
         dead = torch.diag(H) == 0
         H[dead, dead] = 1
+        dXXT[:, dead] = 0
         H_orig = H.clone()
         H.diagonal().add_(percdamp * torch.mean(torch.diag(H)))
 
@@ -714,17 +737,17 @@ def requant_layer(
             cfg_rq = ReQuantConfig(
                 num_sweeps=sweeps,
                 num_candidates=num_candidates,
-                beta=0.0,
+                beta=requant_beta,
                 lambda_anchor=0.0,
                 min_gain_eps=eps_layer,
                 early_stop_consecutive_cols=0,
             )
             Q_new, _, n_upd = requant_from_config(
                 W_orig, Q_w, W_int, scale, zero,
-                H_orig, None, min_int, max_int, cfg_rq,
+                H_orig, dXXT if use_dxxt else None, min_int, max_int, cfg_rq,
             )
             mod.weight.data = Q_new.to(mod.weight.dtype)
             logging.info(
-                "requant_layer layers.%d.%s sweeps=%d updates=%d",
-                layer_idx, name, sweeps, n_upd,
+                "requant_layer layers.%d.%s sweeps=%d beta=%.3f dXXT=%s updates=%d",
+                layer_idx, name, sweeps, cfg_rq.beta, use_dxxt, n_upd,
             )

@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 
 from utils import quant_utils, memory_utils, model_utils
-from requant import requant_layer
+from requant import FPInputsCache, requant_layer
 
 
 class GPTQ:
@@ -377,19 +377,36 @@ def rtn_fwrd(args, analyzer: model_utils.ModelAnalyzer, dataloader=None, dev="cu
         attention_mask = cache["attention_mask"]
         position_ids = cache["position_ids"]
         position_embeddings = cache["position_embeddings"]
+        fp_inps = inps.clone()
         if args.offload_inps:
             inps = inps.cpu()
+            fp_inps = fp_inps.cpu()
     else:
         inps = None
+        fp_inps = None
         attention_mask = position_ids = position_embeddings = None
 
     quantizers = {}
     sequential = analyzer.get_sequential_quantizable_module_names()
+    fp_inputs_cache = FPInputsCache(sequential) if use_requant else None
     for i in tqdm(range(len(layers)), ncols=120, desc="Quantizing Layers"):
         layer = layers[i].to(dev)
 
         subset = analyzer.get_quantizable_modules(layer)
         if use_requant:
+            bits_config = quant_utils.disable_act_quant(layer)
+            assert fp_inputs_cache is not None
+            fp_inputs_cache.add_hook(subset)
+            for j in range(args.nsamples):
+                fp_inps[j] = layer(
+                    fp_inps[j].unsqueeze(0).to(dev),
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
+                )[0].to(fp_inps.device)
+            fp_inputs_cache.clear_hook()
+            quant_utils.enable_act_quant(layer, bits_config)
+
             fp_weights = {}
             for names in sequential:
                 for name in names:
@@ -433,7 +450,9 @@ def rtn_fwrd(args, analyzer: model_utils.ModelAnalyzer, dataloader=None, dev="cu
                 position_embeddings,
                 args,
                 torch.device(dev),
+                fp_inputs_cache=fp_inputs_cache.fp_cache,
             )
+            fp_inputs_cache.clear_cache()
             for j in range(args.nsamples):
                 inps[j] = layer(
                     inps[j].unsqueeze(0).to(dev),
