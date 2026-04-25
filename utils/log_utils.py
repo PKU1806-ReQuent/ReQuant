@@ -63,14 +63,13 @@ def init_logging(log_dir):
         force=True  # Overwrites any existing logging configuration
     )
 
-    # torchrun / torch.distributed.run 会注入 RANK；非 0 不写终端，避免 4 份重复 INFO
+    # Suppress duplicate console logs from nonzero torchrun ranks.
     silence_worker_console_if_not_rank0()
 
 
 def silence_worker_console_if_not_rank0():
     """
-    若环境变量 RANK 存在且不为 0，移除 root 上指向 stdout/stderr 的 Handler。
-    文件日志保留。未设置 RANK（单进程直接 python）时视为 rank0，不改动。
+    Remove stdout/stderr handlers on nonzero ranks while keeping file logging.
     """
     if "RANK" not in os.environ:
         return

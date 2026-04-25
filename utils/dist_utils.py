@@ -12,7 +12,7 @@ from utils import memory_utils
 
 
 def init_process_group():
-    # NCCL：每个 rank 必须先绑定本进程 GPU，否则多进程易默认挤在 cuda:0 或在 barrier 上报 OOM
+    # Bind each rank to its local GPU before NCCL initialization.
     if torch.cuda.is_available():
         local_rank = int(os.environ.get("LOCAL_RANK", "0"))
         torch.cuda.set_device(local_rank)

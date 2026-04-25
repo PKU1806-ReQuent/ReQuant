@@ -20,8 +20,9 @@ from gptq_utils import (
     gptaq_utils,
     gptq_guided_utils,
     gptq_plus_utils,
-    gptaq_refined_utils,
 )
+from gptq_utils.dp_common import resolve_local_cuda_device
+from gptq_utils.gptq_dp_utils import gptq_fwrd_data_parallel
 from utils import data_utils, model_utils
 
 
@@ -49,21 +50,27 @@ def quantize_weights(args, analyzer: model_utils.ModelAnalyzer):
                 trainloader = [(x.unsqueeze(0), None) for x in trainloader]
 
             if args.w_method == "rtn":
-                quantizers = gptq_utils.rtn_fwrd(args, analyzer, "cuda:0")
+                quantizers = gptq_utils.rtn_fwrd(args, analyzer, trainloader, "cuda:0")
             elif args.w_method == "gptq":
                 quantizers = gptq_utils.gptq_fwrd(args, analyzer, trainloader, "cuda:0")
             elif args.w_method == "gptaq":
-                quantizers = gptaq_utils.gptq_fwrd(args, analyzer, trainloader, "cuda:0")
+                if getattr(args, "enable_requant", False):
+                    dev = resolve_local_cuda_device()
+                    if dev.type == "cuda":
+                        torch.cuda.set_device(dev)
+                    quantizers = gptq_fwrd_data_parallel(
+                        args, analyzer, trainloader, dev, use_requant=True
+                    )
+                else:
+                    quantizers = gptaq_utils.gptq_fwrd(args, analyzer, trainloader, "cuda:0")
             elif args.w_method == "gptq_guided":
                 quantizers = gptq_guided_utils.gptq_fwrd(args, analyzer, trainloader, "cuda:0")
             elif args.w_method == "gptq_plus":
                 quantizers = gptq_plus_utils.gptq_fwrd(args, analyzer, trainloader, "cuda:0")
-            elif args.w_method == "gptaq_refined":
-                quantizers = gptaq_refined_utils.gptq_refined_fwrd(args, analyzer, trainloader, "cuda:0")
             elif args.w_method == "awq":
                 raise NotImplementedError(
                     "w_method=awq is currently implemented via the multi-GPU entry "
-                    "`ptq_awq_dp.py`; launch it with torchrun / scripts/awq_dp.sh."
+                    "`ptq_dp.py`; launch it with torchrun / scripts/awq.sh."
                 )
             save_dict["w_quantizers"] = quantizers
 

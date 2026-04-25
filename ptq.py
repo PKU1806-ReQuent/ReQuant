@@ -52,36 +52,14 @@ def main(args):
     else:
         quant_utils.add_actquant(analyzer)
 
+    if args.enable_aq_calibration:
+        quant_utils.configure_actquant_from_args(args, model)
+
     # Quantize model weights
     model = quantize_weights(args, analyzer)
 
-    # Add Input Quantization
-    if args.a_bits < 16 or args.v_bits < 16:
-        qlayers = quant_utils.find_qlayers(model, layers=[quant_utils.ActQuantWrapper])
-
-        for name in qlayers:
-            layer_input_bits = args.a_bits
-            layer_groupsize = args.a_groupsize
-            layer_a_sym = not (args.a_asym)
-            layer_a_clip = args.a_clip_ratio
-
-            if "v_proj" in name and args.v_bits < 16:  # Set the v_proj precision
-                qlayers[name].out_quantizer.configure(
-                    bits=args.v_bits,
-                    groupsize=args.v_groupsize,
-                    sym=not (args.v_asym),
-                    clip_ratio=args.v_clip_ratio,
-                )
-
-            if "lm_head" in name:  # Skip lm_head quantization
-                layer_input_bits = 16
-
-            qlayers[name].quantizer.configure(
-                bits=layer_input_bits,
-                groupsize=layer_groupsize,
-                sym=layer_a_sym,
-                clip_ratio=layer_a_clip,
-            )
+    if not args.enable_aq_calibration:
+        quant_utils.configure_actquant_from_args(args, model)
 
     if args.k_bits < 16:
         rope_function_name = "apply_rotary_pos_emb"

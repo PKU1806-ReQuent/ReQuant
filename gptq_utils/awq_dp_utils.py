@@ -17,14 +17,18 @@ see the full calibration set across GPUs.
 from __future__ import annotations
 
 import logging
-import os
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import torch
 import torch.distributed as dist
 from tqdm import tqdm
 
-from gptq_utils.gptaq_dp_utils import _local_sample_indices, _move_attn_struct_to_device
+from gptq_utils.dp_common import (
+    capture_calibration_state,
+    local_sample_indices,
+    propagate_layer_inputs,
+)
+from requant import requant_layer
 from utils import dist_utils, memory_utils, model_utils, quant_utils
 
 
@@ -184,8 +188,7 @@ def _quantize_layer_weights(
             quantizer.find_params(weight)
             q_weight, _, _ = quantizer.fake_quantize(weight)
             module.weight.data = q_weight.to(module.weight.data.dtype)
-            if rank == 0:
-                quantizers[f"model.layers.{layer_idx}.{name}"] = quantizer.cpu()
+            quantizers[f"model.layers.{layer_idx}.{name}"] = quantizer.cpu()
     return quantizers
 
 
@@ -200,12 +203,12 @@ def awq_fwrd_data_parallel(
     if not dist.is_available() or not dist.is_initialized():
         raise RuntimeError(
             "awq_dp: awq_fwrd_data_parallel requires torch.distributed; "
-            "launch with torchrun (see ptq_awq_dp.py)."
+            "launch with torchrun (see ptq_dp.py)."
         )
 
     rank = dist.get_rank()
     world_size = dist.get_world_size()
-    local_js = _local_sample_indices(rank, world_size, args.nsamples)
+    local_js = local_sample_indices(rank, world_size, args.nsamples)
     shard_inps = bool(getattr(args, "dp_shard_inps", False) and world_size > 1)
     logging.info(
         "-----AWQ DP rank=%d world=%d local_samples=%d/%d dp_shard_inps=%s-----",
@@ -226,121 +229,11 @@ def awq_fwrd_data_parallel(
         module.to(dev)
     layers[0] = layers[0].to(dev)
 
-    dtype = next(iter(model.parameters())).dtype
-    hidden = model.config.hidden_size
-    seqlen = model.seqlen
-
-    inps_shard: Optional[torch.Tensor] = None
-    inps: Optional[torch.Tensor] = None
-
-    if shard_inps:
-        cache = {"i": 0, "attention_mask": None}
-        inps_full_cpu: Optional[torch.Tensor] = None
-        if rank == 0:
-            inps_full_cpu = torch.zeros(
-                (args.nsamples, seqlen, hidden), dtype=dtype, device="cpu"
-            )
-
-        class Catcher(torch.nn.Module):
-            def __init__(self, module):
-                super().__init__()
-                self.module = module
-                if hasattr(module, "attention_type"):
-                    self.attention_type = module.attention_type
-
-            def forward(self, inp, **kwargs):
-                assert inps_full_cpu is not None
-                inps_full_cpu[cache["i"]] = inp.detach().cpu()
-                cache["i"] += 1
-                cache["attention_mask"] = kwargs["attention_mask"]
-                cache["position_ids"] = kwargs["position_ids"]
-                cache["position_embeddings"] = kwargs["position_embeddings"]
-                raise ValueError
-
-        if rank == 0:
-            layers[0] = Catcher(layers[0])
-            for batch in dataloader:
-                try:
-                    model(batch[0].to(dev))
-                except ValueError:
-                    pass
-            layers[0] = layers[0].module
-        dist.barrier(group=group)
-
-        def _to_cpu_meta(x):
-            if x is None:
-                return None
-            if torch.is_tensor(x):
-                return x.detach().cpu()
-            return x
-
-        if rank == 0:
-            meta = [
-                _to_cpu_meta(cache["attention_mask"]),
-                _to_cpu_meta(cache["position_ids"]),
-                _to_cpu_meta(cache["position_embeddings"]),
-            ]
-        else:
-            meta = [None, None, None]
-        dist.broadcast_object_list(meta, src=0, group=group)
-        attention_mask, position_ids, position_embeddings = meta[0], meta[1], meta[2]
-        attention_mask = _move_attn_struct_to_device(attention_mask, dev)
-        position_ids = _move_attn_struct_to_device(position_ids, dev)
-        position_embeddings = _move_attn_struct_to_device(position_embeddings, dev)
-
-        if rank == 0:
-            assert inps_full_cpu is not None
-            scatter_objs = [
-                inps_full_cpu[_local_sample_indices(r, world_size, args.nsamples), :, :].contiguous()
-                for r in range(world_size)
-            ]
-        else:
-            scatter_objs = None
-        recv_list: List[Any] = [None]
-        dist.scatter_object_list(recv_list, scatter_objs, src=0, group=group)
-        shard_storage = torch.device("cpu") if args.offload_inps else dev
-        inps_shard = recv_list[0].to(shard_storage)
-        del recv_list
-        if rank == 0:
-            del inps_full_cpu, cache
-        memory_utils.cleanup_memory(False)
-    else:
-        inps = torch.zeros(
-            (args.nsamples, seqlen, hidden), dtype=dtype, device=dev
-        )
-        cache = {"i": 0, "attention_mask": None}
-
-        class Catcher(torch.nn.Module):
-            def __init__(self, module):
-                super().__init__()
-                self.module = module
-                if hasattr(module, "attention_type"):
-                    self.attention_type = module.attention_type
-
-            def forward(self, inp, **kwargs):
-                inps[cache["i"]] = inp
-                cache["i"] += 1
-                cache["attention_mask"] = kwargs["attention_mask"]
-                cache["position_ids"] = kwargs["position_ids"]
-                cache["position_embeddings"] = kwargs["position_embeddings"]
-                raise ValueError
-
-        layers[0] = Catcher(layers[0])
-        for batch in dataloader:
-            try:
-                model(batch[0].to(dev))
-            except ValueError:
-                pass
-        layers[0] = layers[0].module
-
-        attention_mask = cache["attention_mask"]
-        position_ids = cache["position_ids"]
-        position_embeddings = cache["position_embeddings"]
-
-        if world_size > 1:
-            dist.broadcast(inps, src=0, group=group)
-        if args.offload_inps:
-            inps = inps.cpu()
+    state = capture_calibration_state(
+        args, model, layers, dataloader, dev, rank, world_size, group, clone_fp=False
+    )
+    local_js = state.local_indices
+    shard_inps = state.shard_inputs
 
     layers[0] = layers[0].to(orig_device)
     memory_utils.cleanup_memory(False)
@@ -365,59 +258,65 @@ def awq_fwrd_data_parallel(
                 continue
             hook_module = modules[0]
             if shard_inps:
-                group_inputs = inps_shard
+                group_inputs = state.inps_shard
                 group_indices = range(len(local_js))
             else:
-                group_inputs = inps
+                group_inputs = state.inps
                 group_indices = local_js
+            assert group_inputs is not None
             act_mean = _collect_group_activation_mean(
                 layer,
                 hook_module,
                 group_inputs,
                 group_indices,
                 dev,
-                attention_mask,
-                position_ids,
-                position_embeddings,
+                state.attention_mask,
+                state.position_ids,
+                state.position_embeddings,
                 group=group,
             )
             scale = _search_awq_scale(modules, act_mean, args)
             _apply_awq_scale(norm_module, modules, scale)
 
+        fp_weights = {}
+        for names in sequential:
+            for name in names:
+                module = full.get(name, full.get(name + ".module", None))
+                if module is not None and "lm_head" not in name:
+                    fp_weights[f"model.layers.{i}.{name}"] = (
+                        _unwrap_linear_module(module).weight.data.float().clone()
+                    )
         quant_utils.enable_act_quant(layer, bits_config)
         quantizers.update(_quantize_layer_weights(i, full, sequential, args, rank))
+        if getattr(args, "requant_sweeps", 0) > 0:
+            if shard_inps:
+                assert state.inps_shard is not None
+                rq_inps = state.inps_shard
+                rq_indices = range(len(local_js))
+            else:
+                assert state.inps is not None
+                rq_inps = state.inps
+                rq_indices = local_js
+            requant_layer(
+                layer,
+                full,
+                sequential,
+                i,
+                quantizers,
+                fp_weights,
+                rq_inps,
+                state.attention_mask,
+                state.position_ids,
+                state.position_embeddings,
+                args,
+                dev,
+                input_indices=rq_indices,
+                group=group,
+            )
         if world_size > 1:
             dist_utils.broadcast_parameters(layer, src=0, group=group)
 
-        if shard_inps:
-            for k in range(len(local_js)):
-                inps_shard[k] = layer(
-                    inps_shard[k].unsqueeze(0).to(dev),
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    position_embeddings=position_embeddings,
-                )[0].to(inps_shard.device)
-        else:
-            for j in range(args.nsamples):
-                if rank == 0:
-                    inps[j] = layer(
-                        inps[j].unsqueeze(0).to(dev),
-                        attention_mask=attention_mask,
-                        position_ids=position_ids,
-                        position_embeddings=position_embeddings,
-                    )[0].to(inps.device)
-                if world_size > 1:
-                    buf = (
-                        inps[j].to(dev)
-                        if rank == 0
-                        else torch.empty(
-                            inps[j].shape,
-                            dtype=inps.dtype,
-                            device=dev,
-                        )
-                    )
-                    dist.broadcast(buf, src=0, group=group)
-                    inps[j] = buf.to(inps.device)
+        propagate_layer_inputs(args, layer, state, dev, rank, world_size, group)
 
         layers[i] = layer.to(orig_device)
         del layer
@@ -429,8 +328,3 @@ def awq_fwrd_data_parallel(
     memory_utils.cleanup_memory(verbos=True)
     logging.info("-----AWQ DP Quantization Done (rank=%d)-----\n", rank)
     return quantizers
-
-
-def resolve_local_cuda_device() -> torch.device:
-    lr = int(os.environ.get("LOCAL_RANK", "0"))
-    return torch.device(f"cuda:{lr}")

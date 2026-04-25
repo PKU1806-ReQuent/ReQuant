@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 预缓存 lm_eval 常见任务数据集到本地（HF datasets cache）。
-# 用法：
+# Pre-cache common lm-eval datasets in the local Hugging Face datasets cache.
+# Usage:
 #   bash scripts/cache_lm_eval_datasets.sh
-# 可选：
+# Optional:
 #   HTTP_PROXY=http://162.105.146.48:7890 HTTPS_PROXY=http://162.105.146.48:7890 \
 #   HF_ENDPOINT=https://hf-mirror.com \
 #   bash scripts/cache_lm_eval_datasets.sh
@@ -29,9 +29,7 @@ import traceback
 from datasets import load_dataset
 
 # (dataset_id_candidates, config, split_to_touch)
-# 说明：
-# - split 只用来触发下载和缓存，不做训练/评测。
-# - 候选 ID 从左到右尝试，优先与当前 qa_eval/lm_eval 常用命名一致。
+# The split is only touched to trigger download/cache. Dataset IDs are tried in order.
 TARGETS = [
     (("piqa",), None, "validation"),
     (("Rowan/hellaswag", "hellaswag"), None, "validation"),

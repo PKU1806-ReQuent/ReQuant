@@ -26,7 +26,7 @@ class GPTAQ:
     def add_batch(self, inp, out):
         if len(inp.shape) == 2:
             inp = inp.unsqueeze(0)
-        # Token-level count: for [B, T, d] use B*T (aligned with GPTAQRefined.add_batch).
+        # Token-level count: for [B, T, d] use B*T (aligned with GPTQReQuant.add_batch).
         tmp = inp.shape[0] * inp.shape[1] if len(inp.shape) == 3 else inp.shape[0]
         if len(inp.shape) == 3:
             inp = inp.reshape((-1, inp.shape[-1]))
@@ -81,7 +81,6 @@ class GPTAQ:
             self.dXXT = self.dXXT[perm][:, perm]
             invperm = torch.argsort(perm)
 
-        Losses = torch.zeros_like(W)
         Q = torch.zeros_like(W)
 
         damp_percent = percdamp
@@ -115,7 +114,6 @@ class GPTAQ:
             W1 = W[:, i1:i2].clone()
             Q1 = torch.zeros_like(W1)
             Err1 = torch.zeros_like(W1)
-            Losses1 = torch.zeros_like(W1)
             Hinv1 = Hinv[i1:i2, i1:i2]
             P1 = P[i1:i2, i1:i2]
 
@@ -137,18 +135,17 @@ class GPTAQ:
 
                 q = self.quantizer.quantize(w.unsqueeze(1)).flatten()
                 Q1[:, i] = q
-                Losses1[:, i] = (w - q) ** 2 / d**2
 
                 err1 = (w - q) / d
-                W1[:, i:] -= err1.unsqueeze(1).matmul(Hinv1[i, i:].unsqueeze(0)) - w.unsqueeze(1).matmul(P1[i, i:].unsqueeze(0))
+                W1[:, i:] -= (
+                    err1.unsqueeze(1).matmul(Hinv1[i, i:].unsqueeze(0))
+                    - w.unsqueeze(1).matmul(P1[i, i:].unsqueeze(0))
+                )
                 Err1[:, i] = err1
 
             Q[:, i1:i2] = Q1
-            Losses[:, i1:i2] = Losses1 / 2
 
             W[:, i2:] -= Err1.matmul(Hinv[i1:i2, i2:]) - W1.matmul(P[i1:i2, i2:])
-
-        torch.cuda.synchronize()
 
         if actorder:
             Q = Q[:, invperm]
@@ -170,7 +167,6 @@ class GPTAQ:
 
     def free(self):
         self.H = None
-        self.Losses = None
         self.dXXT = None
         torch.cuda.empty_cache()
         memory_utils.cleanup_memory(verbos=False)
