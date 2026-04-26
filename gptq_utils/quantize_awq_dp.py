@@ -2,7 +2,7 @@
 """
 Weight quantization entry for AWQ with data-parallel activation-stat collection.
 
-Use with ``torchrun --nproc_per_node=R`` and ``ptq_awq_dp.py``.
+Use with ``torchrun --nproc_per_node=R`` and ``ptq_dp.py``.
 """
 
 import logging
@@ -12,7 +12,8 @@ import torch
 import transformers
 from accelerate.hooks import remove_hook_from_module
 
-from gptq_utils.awq_dp_utils import awq_fwrd_data_parallel, resolve_local_cuda_device
+from gptq_utils.awq_dp_utils import awq_fwrd_data_parallel
+from gptq_utils.dp_common import resolve_local_cuda_device
 from utils import data_utils, dist_utils, model_utils
 
 

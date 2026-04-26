@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 
 from utils import quant_utils, memory_utils, model_utils
+from requant import FPInputsCache, requant_layer
 
 
 class GPTQ:
@@ -323,7 +324,7 @@ def gptq_fwrd(args, analyzer: model_utils.ModelAnalyzer, dataloader, dev):
 
 
 @torch.no_grad()
-def rtn_fwrd(args, analyzer: model_utils.ModelAnalyzer, dev):
+def rtn_fwrd(args, analyzer: model_utils.ModelAnalyzer, dataloader=None, dev="cuda:0"):
     """
     From GPTQ repo
     """
@@ -331,35 +332,140 @@ def rtn_fwrd(args, analyzer: model_utils.ModelAnalyzer, dev):
     model = analyzer.model
     layers = analyzer.get_layers()
     orig_device = next(model.parameters()).device
+    use_requant = getattr(args, "requant_sweeps", 0) > 0
+
+    if use_requant:
+        for module in analyzer.get_pre_block_modules():
+            module.to(dev)
+        layers[0] = layers[0].to(dev)
+
+        dtype = next(iter(model.parameters())).dtype
+        inps = torch.zeros(
+            (args.nsamples, model.seqlen, model.config.hidden_size),
+            dtype=dtype,
+            device=dev,
+        )
+        cache = {"i": 0, "attention_mask": None}
+
+        class Catcher(nn.Module):
+            def __init__(self, module):
+                super().__init__()
+                self.module = module
+                if hasattr(module, "attention_type"):
+                    self.attention_type = module.attention_type
+
+            def forward(self, inp, **kwargs):
+                inps[cache["i"]] = inp
+                cache["i"] += 1
+                cache["attention_mask"] = kwargs["attention_mask"]
+                cache["position_ids"] = kwargs["position_ids"]
+                cache["position_embeddings"] = kwargs["position_embeddings"]
+                raise ValueError
+
+        if dataloader is None:
+            raise ValueError("rtn_fwrd requires calibration dataloader when requant_sweeps > 0")
+        layers[0] = Catcher(layers[0])
+        for batch in dataloader:
+            try:
+                model(batch[0].to(dev))
+            except ValueError:
+                pass
+        layers[0] = layers[0].module
+        layers[0] = layers[0].to(orig_device)
+        memory_utils.cleanup_memory(False)
+
+        attention_mask = cache["attention_mask"]
+        position_ids = cache["position_ids"]
+        position_embeddings = cache["position_embeddings"]
+        fp_inps = inps.clone()
+        if args.offload_inps:
+            inps = inps.cpu()
+            fp_inps = fp_inps.cpu()
+    else:
+        inps = None
+        fp_inps = None
+        attention_mask = position_ids = position_embeddings = None
 
     quantizers = {}
+    sequential = analyzer.get_sequential_quantizable_module_names()
+    fp_inputs_cache = FPInputsCache(sequential) if use_requant else None
     for i in tqdm(range(len(layers)), ncols=120, desc="Quantizing Layers"):
         layer = layers[i].to(dev)
 
         subset = analyzer.get_quantizable_modules(layer)
+        if use_requant:
+            bits_config = quant_utils.disable_act_quant(layer)
+            assert fp_inputs_cache is not None
+            fp_inputs_cache.add_hook(subset)
+            for j in range(args.nsamples):
+                fp_inps[j] = layer(
+                    fp_inps[j].unsqueeze(0).to(dev),
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
+                )[0].to(fp_inps.device)
+            fp_inputs_cache.clear_hook()
+            quant_utils.enable_act_quant(layer, bits_config)
 
-        for name in subset:
-            layer_weight_bits = args.w_bits
-            w_groupsize = args.w_groupsize
-            if "lm_head" in name:
-                layer_weight_bits = 16
-                continue
-            quantizer = quant_utils.WeightQuantizer()
-            quantizer.configure(
-                layer_weight_bits,
-                perchannel=True,
-                sym=not (args.w_asym),
-                mse=args.w_clip,
-                weight_groupsize=w_groupsize,
+            fp_weights = {}
+            for names in sequential:
+                for name in names:
+                    module = subset.get(name, subset.get(name + ".module", None))
+                    if module is not None and "lm_head" not in name:
+                        fp_weights[f"model.layers.{i}.{name}"] = (
+                            module.weight.data.float().clone()
+                        )
+        else:
+            fp_weights = None
+
+        for names in sequential:
+            for name in names:
+                module = subset.get(name, subset.get(name + ".module", None))
+                if module is None or "lm_head" in name:
+                    continue
+                quantizer = quant_utils.WeightQuantizer()
+                quantizer.configure(
+                    args.w_bits,
+                    perchannel=True,
+                    sym=not (args.w_asym),
+                    mse=args.w_clip,
+                    weight_groupsize=args.w_groupsize,
+                )
+                W = module.weight.data
+                quantizer.find_params(W)
+                q, _, _ = quantizer.fake_quantize(W)
+                module.weight.data = q.to(next(iter(layer.parameters())).dtype)
+                quantizers["model.layers.%d.%s" % (i, name)] = quantizer.cpu()
+        if use_requant:
+            requant_layer(
+                layer,
+                subset,
+                sequential,
+                i,
+                quantizers,
+                fp_weights,
+                inps,
+                attention_mask,
+                position_ids,
+                position_embeddings,
+                args,
+                torch.device(dev),
+                fp_inputs_cache=fp_inputs_cache.fp_cache,
             )
-            W = subset[name].weight.data
-            quantizer.find_params(W)
-            q, int_weight, scale = quantizer.fake_quantize(W)
-            subset[name].weight.data = q.to(next(iter(layer.parameters())).dtype)
-            quantizers["model.layers.%d.%s" % (i, name)] = quantizer.cpu()
+            fp_inputs_cache.clear_cache()
+            for j in range(args.nsamples):
+                inps[j] = layer(
+                    inps[j].unsqueeze(0).to(dev),
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
+                )[0].to(inps.device)
         layers[i] = layer.to(orig_device)
         torch.cuda.empty_cache()
         del layer
 
+    if use_requant:
+        for module in analyzer.get_pre_block_modules():
+            module.to(orig_device)
     memory_utils.cleanup_memory(verbos=True)
     return quantizers

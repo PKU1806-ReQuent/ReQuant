@@ -1,8 +1,13 @@
 # coding=utf-8
 """
-Weight quantization entry for base GPTAQ with data-parallel Hessian accumulation.
+Weight quantization entry for GPTQ/GPTAQ (+ optional ReQuant) with data-parallel
+Hessian accumulation.
 
-Use with ``torchrun --nproc_per_node=R`` and ``ptq_gptaq_dp.py``.
+Use with ``torchrun --nproc_per_node=R`` and ``ptq_dp.py``.
+
+``use_requant=True`` (auto when ``--enable_requant`` is set) instantiates
+``GPTQReQuant`` (Phase-1 P-matrix + optional Phase-2 coordinate descent);
+otherwise ``GPTAQ`` (Phase-1 only).
 """
 
 import logging
@@ -12,15 +17,16 @@ import torch
 import transformers
 from accelerate.hooks import remove_hook_from_module
 
-from gptq_utils.gptaq_dp_utils import gptq_fwrd_data_parallel, resolve_local_cuda_device
+from gptq_utils.dp_common import resolve_local_cuda_device
+from gptq_utils.gptq_dp_utils import gptq_fwrd_data_parallel
 from utils import data_utils, dist_utils, model_utils
 
 
 def quantize_weights_gptaq_dp(args, analyzer: model_utils.ModelAnalyzer):
     """
-    Same contract as ``gptq_utils.main.quantize_weights`` for ``w_method=gptaq``,
-    but calibration uses ``gptq_fwrd_data_parallel``. Checkpoint is written only on
-    global rank 0.
+    Same contract as ``gptq_utils.main.quantize_weights`` for
+    ``w_method in {gptq,gptaq}`` with optional ``--enable_requant``, but calibration uses
+    ``gptq_fwrd_data_parallel``. Checkpoint is written only on global rank 0.
     """
     transformers.set_seed(args.seed)
 
@@ -56,7 +62,10 @@ def quantize_weights_gptaq_dp(args, analyzer: model_utils.ModelAnalyzer):
         if dev.type == "cuda":
             torch.cuda.set_device(dev)
 
-        quantizers = gptq_fwrd_data_parallel(args, analyzer, trainloader, dev)
+        use_requant = bool(getattr(args, "enable_requant", False))
+        quantizers = gptq_fwrd_data_parallel(
+            args, analyzer, trainloader, dev, use_requant=use_requant
+        )
         save_dict["w_quantizers"] = quantizers
 
     if args.save_qmodel_path and dist_utils.is_main():

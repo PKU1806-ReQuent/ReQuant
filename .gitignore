@@ -1,11 +1,17 @@
-modelzoo/
-datasets/
-outputs/
-cache/
+/modelzoo/
+/datasets/
+/outputs/
+/cache/
 __pycache__/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+*.parquet
 
 .vscode
 tmp*
 
-# 本地 Hugging Face token（勿提交）
+# Local Hugging Face token
 .hf_token

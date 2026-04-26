@@ -43,11 +43,19 @@ def parse_gen():
     parser.add_argument("--w_clip", action="store_true", help="Enable weight clipping")
     parser.add_argument("--a_clip_ratio", type=float, default=1.0, help="Activation clipping ratio")
     parser.add_argument(
+        "--enable_requant",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable ReQuant Phase-2 as an independent component after GPTAQ/GPTQ Phase-1.",
+    )
+    parser.add_argument(
         "--enable_aq_calibration",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="GPTAQ/fake_quant 风格：为 True 时在权重量化**之前**调用激活 quantizer.configure，"
-        "校准前向会带激活伪量化；默认 True（先激活后权重量化），可用 --no-enable_aq_calibration 切回原 ReQuant 顺序。",
+        help=(
+            "Configure activation quantizers before weight PTQ so calibration "
+            "forwards include fake activation quantization."
+        ),
     )
     parser.add_argument("--k_clip_ratio", type=float, default=1.0, help="K cache clipping ratio")
     parser.add_argument("--v_clip_ratio", type=float, default=1.0, help="V cache clipping ratio")
@@ -57,8 +65,7 @@ def parse_gen():
     parser.add_argument("--rotate", action="store_true", help="Rotate model (SpinQuant)")
     # GPTQ
     parser.add_argument("--w_method", type=str, default="gptq",
-                        choices=["rtn", "gptq", "gptaq", "gptq_guided", "gptq_plus", "gptaq_refined",
-                                 "awq"],
+                        choices=["rtn", "gptq", "gptaq", "gptq_guided", "gptq_plus", "awq"],
                         help="Weight quantization method")
     parser.add_argument("--act_order", action="store_true", help="Activation reorder (with static groups)")
     parser.add_argument("--num_groups", type=int, default=4,
@@ -75,27 +82,42 @@ def parse_gen():
         default=0.25,
         help="GPTAQ dXXT correction strength for P-matrix (Phase-1); scripts often use 0.25",
     )
-    parser.add_argument("--refine_sweeps", type=int, default=3, help="Number of coordinate descent sweeps in post-GPTQ refinement (0 to disable)")
-    parser.add_argument("--refine_candidates", type=int, default=2, help="Number of grid neighbours to evaluate per direction in refinement")
     parser.add_argument(
-        "--refine_anchor_lambda",
-        type=float,
-        default=0.0,
-        help="gptaq_refined: anchor regularization lambda for Phase-2 (scheme B) to keep q close to GPTAQ init",
+        "--requant_phase2_sweeps",
+        dest="requant_phase2_sweeps",
+        type=int,
+        default=3,
+        help="Phase-2 requant (GPTQReQuant): coordinate-descent sweeps on the int grid (0 disables)",
     )
     parser.add_argument(
-        "--refine_beta",
-        type=float,
-        default=0.25,
-        help="gptaq_refined Phase-2: scaling factor for dXXT correction term in refinement gradient",
+        "--requant_phase2_candidates",
+        dest="requant_phase2_candidates",
+        type=int,
+        default=2,
+        help="Phase-2 requant: ±k integer steps around current W_int per column (grid half-width)",
     )
+    parser.add_argument("--requant_sweeps", type=int, default=0, help="requant_layer: coordinate descent sweeps after base GPTAQ/AWQ (0 to disable)")
+    parser.add_argument("--requant_candidates", type=int, default=2, help="requant_layer: grid neighbours per direction")
     parser.add_argument(
-        "--refine_min_gain_eps",
+        "--requant_anchor_lambda",
+        dest="requant_anchor_lambda",
         type=float,
         default=0.0,
-        help="gptaq_refined Phase-2: accept only if best_gain < -(refine_min_gain_eps * layer_scale); "
-        "layer_scale≈mean(diag(H))*mean(scale^2) per layer. 0 => best_gain<0. "
-        "Tiny positive eps can match 0 if eps*layer_scale << typical |best_gain|.",
+        help="Phase-2 requant: anchor λ to keep Q near Phase-1 init (GPTQReQuant)",
+    )
+    parser.add_argument(
+        "--requant_beta",
+        dest="requant_beta",
+        type=float,
+        default=0.3,
+        help="Phase-2 requant: scales dXXT term in gradient G.",
+    )
+    parser.add_argument(
+        "--requant_min_gain_eps",
+        type=float,
+        default=0.0,
+        help="requant: accept move only if best_gain < -(eps * layer_scale); "
+        "layer_scale≈mean(diag(H))*mean(scale^2). 0 => any strict improvement.",
     )
     parser.add_argument(
         "--awq_grid",
@@ -129,14 +151,14 @@ def parse_gen():
     parser.add_argument(
         "--dp_fasterquant_master_only",
         action="store_true",
-        help="gptaq / gptaq_refined DP (ptq_gptaq_dp.py, ptq_gptaq_refined_dp.py): reduce Hessian to rank 0 "
+        help="DP with optional ReQuant (ptq_dp.py): reduce Hessian to rank 0 "
         "only, run fasterquant only on rank 0, then broadcast each submodule's weight. Frees full H/dXXT + "
-        "Cholesky (and refine on refined path) VRAM on worker GPUs. Not supported with --export_to_et.",
+        "Cholesky (and ReQuant on ReQuant path) VRAM on worker GPUs. Not supported with --export_to_et.",
     )
     parser.add_argument(
         "--dp_shard_inps",
         action="store_true",
-        help="gptaq / gptaq_refined DP: rank0 captures full calibration activations on CPU, scatters per-rank "
+        help="gptaq DP with optional ReQuant: rank0 captures full calibration activations on CPU, scatters per-rank "
         "shards so each GPU holds only ~1/world_size of inps/fp_inps. Layer-wise updates run locally per "
         "shard (weights are already synced). Reduces per-GPU VRAM vs a full [nsamples,seqlen,hidden] buffer.",
     )
