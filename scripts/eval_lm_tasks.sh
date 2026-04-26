@@ -34,6 +34,8 @@ export CUDA_VISIBLE_DEVICES=${DEVICE}
 PYTHON_BIN="${PYTHON_BIN:-python}"
 SEQ_LEN="${SEQ_LEN:-2048}"
 LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE:-32}"
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_HOME="${HF_HOME:-/apdcephfs_fsgm/share_304739527/peterfywang/model_zoo/datasets/_hf_cache}"
 if [[ "${DEVICE}" == *,* ]]; then
     LM_EVAL_PLACEMENT="${LM_EVAL_PLACEMENT:-dispatch}"
 else

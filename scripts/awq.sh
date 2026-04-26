@@ -19,6 +19,9 @@ AWQ_GRID=${AWQ_GRID:-20}
 AWQ_MIN_ALPHA=${AWQ_MIN_ALPHA:-0.0}
 AWQ_MAX_ALPHA=${AWQ_MAX_ALPHA:-1.0}
 REQUANT=${REQUANT:-0}
+OFFLOAD_INPS=${OFFLOAD_INPS:-1}
+OFFLOAD_INPS_FLAG=""
+if [[ "${OFFLOAD_INPS}" == "1" ]]; then OFFLOAD_INPS_FLAG="--offload_inps"; fi
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-1}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
 REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.003}
@@ -87,5 +90,5 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --awq_max_alpha "${AWQ_MAX_ALPHA}" \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
-    --offload_inps \
+    ${OFFLOAD_INPS_FLAG} \
     "${LM_EVAL_ARGS[@]}"
