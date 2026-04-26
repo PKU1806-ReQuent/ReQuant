@@ -116,5 +116,4 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --alpha "${ALPHA}" \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
-    --offload_inps \
-    --lm_eval --lm_eval_batch_size 32
+    --offload_inps

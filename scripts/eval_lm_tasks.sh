@@ -12,6 +12,7 @@
 # Lower this when lm-eval runs out of memory:
 #   LM_EVAL_BATCH_SIZE=8 bash scripts/eval_lm_tasks.sh <model> <ckpt.pt> <GPU>
 # Checkpoints with "_rot" in the filename automatically enable --rotate; set ROTATE=1 to force it.
+# Checkpoints with "_a4" in the filename automatically enable A4 activation quantization.
 # Use USE_LAB_PROXY=1 when datasets need to be downloaded through the lab proxy.
 #   USE_LAB_PROXY=1 bash scripts/eval_lm_tasks.sh <model> <ckpt.pt> <GPU>
 
@@ -34,6 +35,20 @@ export CUDA_VISIBLE_DEVICES=${DEVICE}
 PYTHON_BIN="${PYTHON_BIN:-python}"
 SEQ_LEN="${SEQ_LEN:-2048}"
 LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE:-32}"
+QMODEL_BASENAME="$(basename "${QMODEL}")"
+if [[ -z "${A_BITS:-}" && "${QMODEL_BASENAME}" =~ _a([0-9]+) ]]; then
+    A_BITS="${BASH_REMATCH[1]}"
+fi
+A_BITS="${A_BITS:-16}"
+A_GROUPSIZE="${A_GROUPSIZE:--1}"
+if [[ -z "${A_CLIP_RATIO:-}" && "${A_BITS}" != "16" ]]; then
+    A_CLIP_RATIO=0.9
+fi
+A_CLIP_RATIO="${A_CLIP_RATIO:-1.0}"
+if [[ -z "${A_ASYM:-}" && "${QMODEL_BASENAME}" == *_aasym* ]]; then
+    A_ASYM=1
+fi
+A_ASYM="${A_ASYM:-0}"
 if [[ "${DEVICE}" == *,* ]]; then
     LM_EVAL_PLACEMENT="${LM_EVAL_PLACEMENT:-dispatch}"
 else
@@ -48,9 +63,14 @@ if [[ "${USE_LAB_PROXY:-0}" == "1" ]]; then
     export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 fi
 EXTRA_ARGS=()
-if [[ "${ROTATE:-0}" == "1" || "$(basename "${QMODEL}")" == *_rot* ]]; then
+if [[ "${ROTATE:-0}" == "1" || "${QMODEL_BASENAME}" == *_rot* ]]; then
     EXTRA_ARGS+=(--rotate)
 fi
+if [[ "${A_ASYM}" == "1" ]]; then
+    EXTRA_ARGS+=(--a_asym)
+fi
+
+echo "[Info] activation quant: A_BITS=${A_BITS} A_GROUPSIZE=${A_GROUPSIZE} A_CLIP_RATIO=${A_CLIP_RATIO} A_ASYM=${A_ASYM}"
 
 exec "${PYTHON_BIN}" "${REPO_ROOT}/eval_lm_tasks.py" \
     --model "${MODEL_PATH}" \
@@ -58,4 +78,7 @@ exec "${PYTHON_BIN}" "${REPO_ROOT}/eval_lm_tasks.py" \
     --seq_len "${SEQ_LEN}" \
     --placement "${LM_EVAL_PLACEMENT}" \
     --lm_eval_batch_size "${LM_EVAL_BATCH_SIZE}" \
+    --a_bits "${A_BITS}" \
+    --a_groupsize "${A_GROUPSIZE}" \
+    --a_clip_ratio "${A_CLIP_RATIO}" \
     "${EXTRA_ARGS[@]}"

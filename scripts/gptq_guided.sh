@@ -38,5 +38,4 @@ python -m torch.distributed.run \
     --dataset wikitext2 --nsamples ${N_SAMPLES} --seq_len ${SEQ_LEN} \
     --w_method gptq_guided --w_bits 4 --w_clip --num_groups ${NUM_GROUPS} --act_order \
     "${EXTRA_ARGS[@]}" \
-    --save_qmodel_path "${SAVE_QMODEL_PATH}" \
-    --lm_eval --lm_eval_batch_size 32 \
+    --save_qmodel_path "${SAVE_QMODEL_PATH}"

@@ -13,5 +13,4 @@ export CUDA_VISIBLE_DEVICES=${DEVICE}
 python -m torch.distributed.run \
     --standalone --nnodes=1 --nproc_per_node=1 ./ptq.py \
     --model ${MODEL_PATH} \
-    --exp bf16 \
-    --lm_eval --lm_eval_batch_size 32 \
+    --exp bf16

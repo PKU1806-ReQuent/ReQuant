@@ -42,5 +42,4 @@ python -m torch.distributed.run \
     --w_method gptq_plus --w_bits 4 --w_clip --num_groups ${NUM_GROUPS} --act_order \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
-    --lm_eval --lm_eval_batch_size 32 \
     --kl_topk ${KL_TOPK} --bsz ${BSZ} --alpha ${ALPHA}

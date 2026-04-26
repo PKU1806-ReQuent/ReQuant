@@ -24,6 +24,9 @@ Multi-GPU example::
 execution.
 
 ``--rotate`` must match checkpoints produced with SpinQuant rotation.
+
+``--a_bits`` / ``--a_asym`` / ``--a_clip_ratio`` must match W4A4 checkpoints
+so that activation quantization is enabled during evaluation.
 """
 
 import argparse
@@ -63,6 +66,14 @@ def parse_args():
     )
     p.add_argument("--seq_len", type=int, default=2048, help="Sequence length for ModelAnalyzer")
     p.add_argument("--lm_eval_batch_size", type=int, default=32)
+    p.add_argument("--a_bits", type=int, default=16, help="Activation bits used during PTQ")
+    p.add_argument("--a_groupsize", type=int, default=-1, help="Activation group size used during PTQ")
+    p.add_argument("--a_clip_ratio", type=float, default=1.0, help="Activation clipping ratio used during PTQ")
+    p.add_argument("--a_asym", action="store_true", help="Use asymmetric activation quantization")
+    p.add_argument("--v_bits", type=int, default=16, help="V-cache/output activation bits")
+    p.add_argument("--v_groupsize", type=int, default=-1, help="V-cache/output activation group size")
+    p.add_argument("--v_clip_ratio", type=float, default=1.0, help="V-cache/output activation clipping ratio")
+    p.add_argument("--v_asym", action="store_true", help="Use asymmetric V-cache/output activation quantization")
     p.add_argument(
         "--placement",
         type=str,
@@ -105,6 +116,7 @@ def main():
 
     logging.info("add_actquant (structure must match training)")
     quant_utils.add_actquant(analyzer)
+    quant_utils.configure_actquant_from_args(args, model)
     if args.rotate:
         logging.info("rotate=1: configure down_proj online Hadamard (match ptq_dp.py)")
         _configure_rotate_down_proj(model)
