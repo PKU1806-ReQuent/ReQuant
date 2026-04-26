@@ -8,6 +8,33 @@ import numpy as np
 import transformers
 from datasets import load_dataset
 
+# Dataset source resolution:
+# Priority 1) local directory ./datasets/<name> (offline-friendly);
+# Priority 2) Hugging Face Hub repo id listed below.
+# Set env var HF_ENDPOINT=https://hf-mirror.com (or a proxy) for faster access.
+_HF_DATASET_IDS = {
+    "wikitext": "Salesforce/wikitext",
+    "LLM_compression_calibration": "neuralmagic/LLM_compression_calibration",
+    "ultrachat_2k": "HuggingFaceH4/ultrachat_200k",
+    "NuminaMath-1.5": "AI-MO/NuminaMath-1.5",
+}
+
+
+def _resolve_dataset_source(local_name: str) -> str:
+    """Return a dataset path/id to feed into `datasets.load_dataset`.
+
+    If ./datasets/<local_name> exists locally we use it (backward compatible
+    with an offline mirror). Otherwise we fall back to the Hugging Face Hub
+    repo id, letting the datasets library handle the cache/download itself.
+    """
+    local_path = os.path.join("./datasets", local_name)
+    if os.path.isdir(local_path):
+        return local_path
+    if local_name in _HF_DATASET_IDS:
+        return _HF_DATASET_IDS[local_name]
+    # Fall back to the local path; load_dataset will raise a clear error.
+    return local_path
+
 
 def format_messages(messages: list[dict]) -> str:
     chunks = []
@@ -34,7 +61,8 @@ def format_messages(messages: list[dict]) -> str:
 def _get_wikitext2(split):
     assert split in ['train', 'validation', 'test'], f"Unknown split {split} for wikitext2"
 
-    data = load_dataset('./datasets/wikitext', 'wikitext-2-raw-v1', split=split)
+    source = _resolve_dataset_source("wikitext")
+    data = load_dataset(source, 'wikitext-2-raw-v1', split=split)
     return data['text']
 
 
@@ -52,7 +80,8 @@ def _get_neuralmagic(tokenizer, split):
             text = example["text"]
         return {"text": text}
 
-    data = load_dataset("./datasets/LLM_compression_calibration", split=split)
+    source = _resolve_dataset_source("LLM_compression_calibration")
+    data = load_dataset(source, split=split)
     data = data.map(preprocess_fn, remove_columns=data.column_names)
     return data['text']
 
@@ -71,7 +100,8 @@ def _get_ultrachat_2k(tokenizer, split):
             text = format_messages(example["messages"])
         return {"text": text}
 
-    data = load_dataset("./datasets/ultrachat_2k", split=f"test_sft[:256]" if split == "test" else "train_sft[256:]")
+    source = _resolve_dataset_source("ultrachat_2k")
+    data = load_dataset(source, split=f"test_sft[:256]" if split == "test" else "train_sft[256:]")
     data = data.map(preprocess_fn, remove_columns=data.column_names)
     return data['text']
 
@@ -100,7 +130,8 @@ def _get_numinamath(tokenizer, split):
             text = format_messages(example["messages"])
         return {"text": text}
 
-    data = load_dataset("./datasets/NuminaMath-1.5", split=f"train[:128]" if split == "test" else "train[128:]")
+    source = _resolve_dataset_source("NuminaMath-1.5")
+    data = load_dataset(source, split=f"train[:128]" if split == "test" else "train[128:]")
     data = data.map(preprocess_fn, remove_columns=data.column_names)
     return data['text']
 
