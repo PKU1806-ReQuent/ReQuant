@@ -12,6 +12,8 @@ KL_TOPK=20
 BSZ=4
 ALPHA=0.05
 ROTATE=${ROTATE:-0}
+LM_EVAL=${LM_EVAL:-0}
+LM_EVAL_BATCH_SIZE=${LM_EVAL_BATCH_SIZE:-32}
 ROTATE_TAG=""
 if [[ "${ROTATE}" == "1" ]]; then
     ROTATE_TAG="_rot"
@@ -32,6 +34,12 @@ if [[ "${ROTATE}" == "1" ]]; then
         EXTRA_ARGS+=(--optimized_rotation_path "${OPTIMIZED_ROTATION_PATH}")
     fi
 fi
+if [[ "${LM_EVAL}" == "1" ]]; then
+    EXTRA_ARGS+=(--lm_eval --lm_eval_batch_size "${LM_EVAL_BATCH_SIZE}")
+    echo "[Info] lm_eval=1 batch_size=${LM_EVAL_BATCH_SIZE}"
+else
+    echo "[Info] lm_eval=0"
+fi
 
 # Execute the distributed run
 python -m torch.distributed.run \
@@ -42,5 +50,4 @@ python -m torch.distributed.run \
     --w_method gptq_plus --w_bits 4 --w_clip --num_groups ${NUM_GROUPS} --act_order \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
-    --lm_eval --lm_eval_batch_size 32 \
     --kl_topk ${KL_TOPK} --bsz ${BSZ} --alpha ${ALPHA}

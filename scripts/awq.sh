@@ -18,9 +18,11 @@ AWQ_GRID=${AWQ_GRID:-20}
 AWQ_MIN_ALPHA=${AWQ_MIN_ALPHA:-0.0}
 AWQ_MAX_ALPHA=${AWQ_MAX_ALPHA:-1.0}
 REQUANT=${REQUANT:-0}
-REQUANT_SWEEPS=${REQUANT_SWEEPS:-1}
+REQUANT_SWEEPS=${REQUANT_SWEEPS:-4}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
-REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.003}
+REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.2}
+LM_EVAL=${LM_EVAL:-0}
+LM_EVAL_BATCH_SIZE=${LM_EVAL_BATCH_SIZE:-32}
 REQUANT_TAG=""
 if [[ "${REQUANT}" == "1" ]]; then
   REQUANT_TAG="_requant_s${REQUANT_SWEEPS}_c${REQUANT_CANDIDATES}"
@@ -66,6 +68,12 @@ if [[ "${REQUANT}" == "1" ]]; then
   )
   echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
 fi
+if [[ "${LM_EVAL}" == "1" ]]; then
+  EXTRA_ARGS+=(--lm_eval --lm_eval_batch_size "${LM_EVAL_BATCH_SIZE}")
+  echo "[Info] lm_eval=1 batch_size=${LM_EVAL_BATCH_SIZE}"
+else
+  echo "[Info] lm_eval=0"
+fi
 
 ${PYTHON_BIN} -m torch.distributed.run \
     --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
@@ -79,5 +87,4 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --awq_max_alpha "${AWQ_MAX_ALPHA}" \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
-    --offload_inps \
-    --lm_eval --lm_eval_batch_size 32
+    --offload_inps

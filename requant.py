@@ -88,11 +88,11 @@ def requant_config_from_phase2_args(args: Any) -> ReQuantConfig:
     if beta is None:
         beta = 0.3
     return ReQuantConfig(
-        num_sweeps=int(getattr(args, "requant_phase2_sweeps", 3)),
+        num_sweeps=int(getattr(args, "requant_phase2_sweeps", 4)),
         num_candidates=int(getattr(args, "requant_phase2_candidates", 2)),
         beta=float(beta),
         lambda_anchor=float(getattr(args, "requant_anchor_lambda", 0.0)),
-        min_gain_eps=float(getattr(args, "requant_min_gain_eps", 0.0)),
+        min_gain_eps=float(getattr(args, "requant_min_gain_eps", 0.2)),
         early_stop_consecutive_cols=int(
             getattr(args, "requant_early_stop_consecutive_cols", 0)
         ),
@@ -105,7 +105,7 @@ def requant_config_from_args(args: Any) -> ReQuantConfig:
     if beta is None:
         beta = 0.3
     return ReQuantConfig(
-        num_sweeps=int(getattr(args, "requant_phase2_sweeps", 3)),
+        num_sweeps=int(getattr(args, "requant_phase2_sweeps", 4)),
         num_candidates=int(
             getattr(args, "requant_phase2_candidates", 2)
         ),
@@ -117,7 +117,7 @@ def requant_config_from_args(args: Any) -> ReQuantConfig:
             getattr(
                 args,
                 "requant_min_gain_eps",
-                0.0,
+                0.2,
             )
         ),
         early_stop_consecutive_cols=int(
@@ -328,11 +328,11 @@ class GPTQReQuant:
         static_groups=False,
         export_to_et=False,
         alpha=0.25,
-        requant_sweeps=3,
+        requant_sweeps=4,
         requant_candidates=2,
         requant_anchor_lambda=0.0,
         requant_beta=0.3,
-        requant_min_gain_eps=0.0,
+        requant_min_gain_eps=0.2,
         requant_early_stop_consecutive_cols=0,
         **extra_kwargs,
     ):
@@ -622,7 +622,7 @@ def requant_layer(
     requant_beta = getattr(args, "requant_beta", None)
     if requant_beta is None:
         requant_beta = 0.3
-    min_gain_eps = getattr(args, "requant_min_gain_eps", 0.003)
+    min_gain_eps = getattr(args, "requant_min_gain_eps", 0.2)
     percdamp = getattr(args, "percdamp", 0.01)
     nsamples = inps.shape[0]
     sample_indices = range(nsamples) if input_indices is None else input_indices

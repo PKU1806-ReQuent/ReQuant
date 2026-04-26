@@ -4,7 +4,7 @@
 Launch with::
 
     torchrun --nnodes=1 --nproc_per_node=N ptq_dp.py \
-        --model ... --w_method {gptq,gptaq,awq} ...
+        --model ... --w_method {rtn,gptq,gptaq,awq} ...
 
 ``--enable_requant`` enables Phase-2 ReQuant for GPTQ/GPTAQ. AWQ uses its
 own ``--requant_sweeps`` post-processing path.
@@ -13,10 +13,12 @@ own ``--requant_sweeps`` post-processing path.
 from process_args import parse_gen
 from gptq_utils.quantize_awq_dp import quantize_weights_awq_dp
 from gptq_utils.quantize_gptaq_dp import quantize_weights_gptaq_dp
+from gptq_utils.quantize_rtn_dp import quantize_weights_rtn_dp
 from gptq_utils.ptq_dp_runner import run_dp_ptq
 
 
 DP_QUANTIZERS = {
+    "rtn": quantize_weights_rtn_dp,
     "gptq": quantize_weights_gptaq_dp,
     "gptaq": quantize_weights_gptaq_dp,
     "awq": quantize_weights_awq_dp,

@@ -23,13 +23,15 @@ A_BITS=${A_BITS:-4}
 A_CLIP_RATIO=${A_CLIP_RATIO:-0.9}
 A_ASYM=${A_ASYM:-1}
 ENABLE_AQ_CALIBRATION=${ENABLE_AQ_CALIBRATION:-1}
+LM_EVAL=${LM_EVAL:-0}
+LM_EVAL_BATCH_SIZE=${LM_EVAL_BATCH_SIZE:-32}
 
 ROTATE=${ROTATE:-1}
 REQUANT=${REQUANT:-0}
-REQUANT_SWEEPS=${REQUANT_SWEEPS:-${REFINE_SWEEPS:-1}}
+REQUANT_SWEEPS=${REQUANT_SWEEPS:-${REFINE_SWEEPS:-4}}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-${REFINE_CANDIDATES:-2}}
 REQUANT_BETA=${REQUANT_BETA:-${REFINE_BETA:-0.3}}
-REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-${REFINE_MIN_GAIN_EPS:-0.003}}
+REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-${REFINE_MIN_GAIN_EPS:-0.2}}
 REQUANT_ANCHOR_LAMBDA=${REQUANT_ANCHOR_LAMBDA:-${REFINE_ANCHOR_LAMBDA:-}}
 
 ACT_TAG=""
@@ -91,6 +93,12 @@ fi
 if [[ "${A_ASYM}" == "1" ]]; then
   EXTRA_ARGS+=(--a_asym)
 fi
+if [[ "${LM_EVAL}" == "1" ]]; then
+  EXTRA_ARGS+=(--lm_eval --lm_eval_batch_size "${LM_EVAL_BATCH_SIZE}")
+  echo "[Info] lm_eval=1 batch_size=${LM_EVAL_BATCH_SIZE}"
+else
+  echo "[Info] lm_eval=0"
+fi
 if [[ "${REQUANT}" == "1" ]]; then
   EXTRA_ARGS+=(
     --enable_requant
@@ -116,5 +124,4 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --alpha "${ALPHA}" \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
-    --offload_inps \
-    --lm_eval --lm_eval_batch_size 32
+    --offload_inps

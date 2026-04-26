@@ -86,7 +86,7 @@ def parse_gen():
         "--requant_phase2_sweeps",
         dest="requant_phase2_sweeps",
         type=int,
-        default=3,
+        default=4,
         help="Phase-2 requant (GPTQReQuant): coordinate-descent sweeps on the int grid (0 disables)",
     )
     parser.add_argument(
@@ -115,7 +115,7 @@ def parse_gen():
     parser.add_argument(
         "--requant_min_gain_eps",
         type=float,
-        default=0.0,
+        default=0.2,
         help="requant: accept move only if best_gain < -(eps * layer_scale); "
         "layer_scale≈mean(diag(H))*mean(scale^2). 0 => any strict improvement.",
     )
