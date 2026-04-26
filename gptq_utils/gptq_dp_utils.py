@@ -278,6 +278,13 @@ def gptq_fwrd_data_parallel(
                     quantizers[f"model.layers.{i}.{name}"] = gptq[name].quantizer
                     gptq[name].free()
                 if master_only and world_size > 1:
+                    # `dist.broadcast` requires the tensor to be contiguous.
+                    # After rotation / fasterquant the weight storage may end up
+                    # as a non-contiguous view, so we normalize the layout on
+                    # every rank before the collective call.
+                    w = subset[name].weight.data
+                    if not w.is_contiguous():
+                        subset[name].weight.data = w.contiguous()
                     dist.broadcast(subset[name].weight.data, src=0, group=group)
 
         propagate_layer_inputs(args, layer, state, dev, rank, world_size, group)
