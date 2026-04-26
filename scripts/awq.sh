@@ -11,6 +11,7 @@ GPU_LIST=${2:-"0,1,2,3"}
 NPROC=${3:-4}
 
 MODEL_NAME=$(basename "${MODEL_PATH}")
+OUTPUT_ROOT="${OUTPUT_ROOT:-./outputs}"
 EXP=awq_dp
 N_SAMPLES=${N_SAMPLES:-512}
 SEQ_LEN=${SEQ_LEN:-2048}
@@ -32,16 +33,17 @@ if [[ "${ROTATE:-1}" == "1" ]]; then
     ROTATE_TAG="${ROTATE_TAG}_optrot"
   fi
 fi
-SAVE_QMODEL_PATH="./outputs/${MODEL_NAME}/${EXP}/awq_dp_w4_ns${N_SAMPLES}_g${AWQ_GRID}_a${AWQ_MIN_ALPHA}-${AWQ_MAX_ALPHA}_dp${NPROC}${ROTATE_TAG}${REQUANT_TAG}.pt"
+SAVE_QMODEL_PATH="${OUTPUT_ROOT}/${MODEL_NAME}/${EXP}/awq_dp_w4_ns${N_SAMPLES}_g${AWQ_GRID}_a${AWQ_MIN_ALPHA}-${AWQ_MAX_ALPHA}_dp${NPROC}${ROTATE_TAG}${REQUANT_TAG}.pt"
 
 export CUDA_VISIBLE_DEVICES=${GPU_LIST}
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
 export MASTER_PORT="${MASTER_PORT:-29630}"
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_HOME="${HF_HOME:-/apdcephfs_fsgm/share_304739527/peterfywang/model_zoo/datasets/_hf_cache}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python)}"
 
 echo "[Info] DP ranks=${NPROC} GPUs=${GPU_LIST} MASTER_ADDR=${MASTER_ADDR} MASTER_PORT=${MASTER_PORT}"
-echo "[Info] output_dir=./outputs/${MODEL_NAME}/${EXP}/ (logs in logs/)"
+echo "[Info] output_dir=${OUTPUT_ROOT}/${MODEL_NAME}/${EXP}/ (logs in logs/)"
 echo "[Info] Save path: ${SAVE_QMODEL_PATH}"
 echo "[Info] requant=${REQUANT}"
 
@@ -67,6 +69,11 @@ if [[ "${REQUANT}" == "1" ]]; then
   echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
 fi
 
+LM_EVAL_ARGS=()
+if [[ "${LM_EVAL_ENABLE:-0}" == "1" ]]; then
+  LM_EVAL_ARGS=(--lm_eval --lm_eval_batch_size "${LM_EVAL_BATCH_SIZE:-32}")
+fi
+
 ${PYTHON_BIN} -m torch.distributed.run \
     --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
     ./ptq_dp.py \
@@ -74,10 +81,11 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --exp "${EXP}" \
     --dataset wikitext2 --nsamples "${N_SAMPLES}" --seq_len "${SEQ_LEN}" \
     --w_method awq --w_bits 4 --w_clip --w_asym \
+    --output_dir "${OUTPUT_ROOT}" \
     --awq_grid "${AWQ_GRID}" \
     --awq_min_alpha "${AWQ_MIN_ALPHA}" \
     --awq_max_alpha "${AWQ_MAX_ALPHA}" \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
     --offload_inps \
-    --lm_eval --lm_eval_batch_size 32
+    "${LM_EVAL_ARGS[@]}"

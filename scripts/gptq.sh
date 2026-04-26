@@ -12,6 +12,7 @@ GPU_LIST=${2:-"0,1,2,3"}
 NPROC=${3:-4}
 
 MODEL_NAME=$(basename "${MODEL_PATH}")
+OUTPUT_ROOT="${OUTPUT_ROOT:-./outputs}"
 EXP=${EXP:-gptq}
 DATASET=${DATASET:-wikitext2}
 N_SAMPLES=${N_SAMPLES:-512}
@@ -47,16 +48,17 @@ if [[ "${REQUANT}" == "1" ]]; then
   REQUANT_TAG="_requant_s${REQUANT_SWEEPS}_c${REQUANT_CANDIDATES}"
 fi
 
-SAVE_QMODEL_PATH="./outputs/${MODEL_NAME}/${EXP}/gptq_w4${ACT_TAG}_ns${N_SAMPLES}_n${NPROC}${ROTATE_TAG}${REQUANT_TAG}.pt"
+SAVE_QMODEL_PATH="${OUTPUT_ROOT}/${MODEL_NAME}/${EXP}/gptq_w4${ACT_TAG}_ns${N_SAMPLES}_n${NPROC}${ROTATE_TAG}${REQUANT_TAG}.pt"
 
 export CUDA_VISIBLE_DEVICES=${GPU_LIST}
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
 export MASTER_PORT="${MASTER_PORT:-29610}"
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_HOME="${HF_HOME:-/apdcephfs_fsgm/share_304739527/peterfywang/model_zoo/datasets/_hf_cache}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python)}"
 
 echo "[Info] ranks=${NPROC} GPUs=${GPU_LIST} MASTER_ADDR=${MASTER_ADDR} MASTER_PORT=${MASTER_PORT}"
-echo "[Info] output_dir=./outputs/${MODEL_NAME}/${EXP}/ (logs in logs/)"
+echo "[Info] output_dir=${OUTPUT_ROOT}/${MODEL_NAME}/${EXP}/ (logs in logs/)"
 echo "[Info] Save path: ${SAVE_QMODEL_PATH}"
 echo "[Info] dataset=${DATASET} nsamples=${N_SAMPLES} seq_len=${SEQ_LEN}"
 echo "[Info] weight method=gptq w_asym=${W_ASYM} requant=${REQUANT} rotate=${ROTATE}"
@@ -105,6 +107,11 @@ if [[ "${REQUANT}" == "1" ]]; then
   echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} beta=${REQUANT_BETA} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
 fi
 
+LM_EVAL_ARGS=()
+if [[ "${LM_EVAL_ENABLE:-0}" == "1" ]]; then
+  LM_EVAL_ARGS=(--lm_eval --lm_eval_batch_size "${LM_EVAL_BATCH_SIZE:-32}")
+fi
+
 ${PYTHON_BIN} -m torch.distributed.run \
     --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
     ./ptq_dp.py \
@@ -112,9 +119,10 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --exp "${EXP}" \
     --dataset "${DATASET}" --nsamples "${N_SAMPLES}" --seq_len "${SEQ_LEN}" \
     --w_method gptq --w_bits 4 --w_clip --act_order \
+    --output_dir "${OUTPUT_ROOT}" \
     --a_bits "${A_BITS}" --a_clip_ratio "${A_CLIP_RATIO}" \
     --alpha "${ALPHA}" \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
     --offload_inps \
-    --lm_eval --lm_eval_batch_size 32
+    "${LM_EVAL_ARGS[@]}"
