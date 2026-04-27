@@ -1,18 +1,19 @@
 MODEL_PATH = /apdcephfs_fsgm/share_304739527/peterfywang/model_zoo/Qwen3-14B
 
 
-| Method | Model | KL-wikitext2 | PPL-wikitext2 | KL-uItrachat_2k | PPL-ultrachat_2k | KL-numinamath | PPL-numinamath | arc-challenge | arc-easy | boolq | ceval-valid | hellaswag | lambada openai | openbookqa | piqa | social_iqa | winogrande | acc_avg |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| FP | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| GPTAQ+Quarot | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| GPTAQ+Quarot+ReQuant | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| GPTQ+Quarot | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| GPTQ+Quarot+ReQuant | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| RTN+Quarot | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| RTN+Quarot+ReQuant | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| AWQ+Quarot | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-| AWQ+Quarot+ReQuant | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-|
+| Method | Model | Quant Time | KL-wikitext2 | PPL-wikitext2 | KL-uItrachat_2k | PPL-ultrachat_2k | KL-numinamath | PPL-numinamath | arc-challenge | arc-easy | boolq | ceval-valid | hellaswag | lambada openai | openbookqa | piqa | social_iqa | winogrande | acc_avg |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FP | Qwen3-14B | — | -1.56e-05 | 8.65 | 4.53e-06 | 4.98 | 6.12e-05 | 3.36 | 60.32 | 82.95 | 89.30 | 82.32 | 78.82 | 67.82 | 46.40 | 79.87 | 52.05 | 72.53 | 71.24 |
+| GPTAQ+Quarot | Qwen3-14B | 33.9 min | 2.72e-02 | 8.83 | 3.31e-02 | 4.96 | 2.56e-02 | 3.36 | 58.96 | 82.32 | 89.02 | 80.31 | 77.45 | 67.79 | 45.40 | 80.36 | 51.28 | 71.98 | 70.49 |
+| GPTAQ+Quarot+ReQuant | Qwen3-14B | 85.4 min | 2.73e-02 | 8.81 | 3.39e-02 | 4.97 | 2.56e-02 | 3.33 | 60.15 | 82.62 | 88.62 | 80.68 | 77.76 | 68.14 | 44.40 | 79.92 | 51.07 | 71.82 | 70.52 |
+| GPTQ+Quarot | Qwen3-14B | 31.9 min | 2.68e-02 | 8.78 | 3.13e-02 | 4.97 | 2.40e-02 | 3.34 | 59.73 | 82.03 | 88.04 | 79.94 | 77.97 | 68.29 | 45.00 | 79.43 | 51.69 | 73.09 | 70.52 |
+| GPTQ+Quarot+ReQuant | Qwen3-14B | 84.9 min | 2.55e-02 | 8.81 | 2.95e-02 | 4.95 | 2.36e-02 | 3.34 | 58.87 | 81.65 | 90.09 | 81.05 | 78.03 | 67.67 | 45.60 | 79.49 | 52.20 | 72.45 | 70.71 |
+| RTN+Quarot | Qwen3-14B | 12.9 min | 1.76e-01 | 10.22 | 1.45e-01 | 5.20 | 1.02e-01 | 3.27 | 55.20 | 78.32 | 86.45 | 78.38 | 75.82 | 67.09 | 42.20 | 79.11 | 48.00 | 69.69 | 68.03 |
+| RTN+Quarot+ReQuant | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+| AWQ+Quarot | Qwen3-14B | 87.3 min | 1.69e-01 | 9.95 | 1.42e-01 | 5.13 | 9.29e-02 | 3.28 | 55.20 | 79.04 | 87.49 | 79.49 | 76.41 | 65.83 | 43.60 | 78.78 | 48.46 | 70.96 | 68.53 |
+| AWQ+Quarot+ReQuant | Qwen3-14B |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+
+> **Quant Time 说明**：仅统计“量化算法阶段”耗时（不含 KL/PPL 评估与 lm_eval 零样本评估），来源为各日志中**首条 `[INFO]` 时间戳** → **`Evaluating KL&PPL on wikitext2` 日志行时间戳** 的差值；baseline 日志位于 `logs_14b/0{1..4}_*.log`，已完成的 ReQuant 日志位于 `logs_14b/06_gptaq_w4a16_rot_requant.log` 与 `logs_14b/07_gptq_w4a16_rot_requant.log`。硬件：8×GPU DP 并行；对 RTN 实际为单卡跑（其余方法均 8 卡 DP）。KL 评估 ≈ 5–6 min、lm_eval ≈ 23–56 min 对所有方法近似常数，未计入此列；`RTN+Quarot+ReQuant` 本轮失败，暂未填入。
 
 ---
 
