@@ -69,9 +69,9 @@ class FPInputsCache:
 class ReQuantConfig:
     """Hyperparameters for :func:`requant_from_config`.
 
-    ``min_gain_eps`` is the **layer-scaled** threshold (negative of the
-    ``neg_eps`` used inside the loop), same convention as the old
-    ``requant_min_gain_eps * layer_scale`` path in ``GPTQReQuant``.
+    ``min_gain_eps`` is the raw relative-gain coefficient. A move is accepted
+    when its predicted improvement beats this fraction of the row's current
+    average quadratic loss contribution.
     """
 
     num_sweeps: int
@@ -88,11 +88,11 @@ def requant_config_from_phase2_args(args: Any) -> ReQuantConfig:
     if beta is None:
         beta = 0.3
     return ReQuantConfig(
-        num_sweeps=int(getattr(args, "requant_phase2_sweeps", 3)),
+        num_sweeps=int(getattr(args, "requant_phase2_sweeps", 4)),
         num_candidates=int(getattr(args, "requant_phase2_candidates", 2)),
         beta=float(beta),
         lambda_anchor=float(getattr(args, "requant_anchor_lambda", 0.0)),
-        min_gain_eps=float(getattr(args, "requant_min_gain_eps", 0.0)),
+        min_gain_eps=float(getattr(args, "requant_min_gain_eps", 0.2)),
         early_stop_consecutive_cols=int(
             getattr(args, "requant_early_stop_consecutive_cols", 0)
         ),
@@ -105,7 +105,7 @@ def requant_config_from_args(args: Any) -> ReQuantConfig:
     if beta is None:
         beta = 0.3
     return ReQuantConfig(
-        num_sweeps=int(getattr(args, "requant_phase2_sweeps", 3)),
+        num_sweeps=int(getattr(args, "requant_phase2_sweeps", 4)),
         num_candidates=int(
             getattr(args, "requant_phase2_candidates", 2)
         ),
@@ -117,7 +117,7 @@ def requant_config_from_args(args: Any) -> ReQuantConfig:
             getattr(
                 args,
                 "requant_min_gain_eps",
-                0.0,
+                0.2,
             )
         ),
         early_stop_consecutive_cols=int(
@@ -159,11 +159,20 @@ def requant_from_config(
     dev, rdtype = Q.device, Q.dtype
     beta = float(cfg.beta)
 
-    G = (W_orig - Q) @ H_orig
+    E = W_orig - Q
+    G = E @ H_orig
+    L_row = (G * E).sum(dim=1)
     if dXXT is not None and beta != 0.0:
         # dXXT stores (X_fp - X_q) @ X_q.T, so this adds the -wB term from
         # the paper's gradient when B = (X_q - X_fp) @ X_q.T.
-        G.add_(beta * (W_orig @ dXXT))
+        WB = W_orig @ dXXT
+        G.add_(beta * WB)
+        # L_row tracks the same effective objective as delta_L:
+        #   L_eff = e^T H e + 2*beta * (e . W_orig@dXXT).sum(dim=1) + const(w)
+        # so that L_row += best_gain stays exact in GPTAQ mode.
+        L_row.add_(2.0 * beta * (E * WB).sum(dim=1))
+        del WB
+    L_row.clamp_min_(1e-12)
 
     H_diag = torch.diag(H_orig)
     ks_list = [
@@ -173,7 +182,7 @@ def requant_from_config(
         return Q, W_int, 0
     ks = torch.tensor(ks_list, device=dev, dtype=rdtype).view(-1, 1)
     pos_inf = torch.tensor(float("inf"), device=dev, dtype=rdtype)
-    neg_eps = torch.tensor(-float(cfg.min_gain_eps), device=dev, dtype=rdtype)
+    min_gain_eps = torch.tensor(float(cfg.min_gain_eps), device=dev, dtype=rdtype)
 
     lam = float(cfg.lambda_anchor)
     Q_anchor = Q.clone() if lam > 0 else None
@@ -202,7 +211,8 @@ def requant_from_config(
             )
 
             best_gain, best_idx = delta_L.min(dim=0)
-            improve = best_gain < neg_eps
+            eps_row = min_gain_eps * (L_row / d)
+            improve = best_gain < -eps_row
             n = int(improve.sum().item())
             if n == 0:
                 streak += 1
@@ -220,6 +230,7 @@ def requant_from_config(
                 W_int[:, j].to(s_j.dtype) - W_zero[:, j].to(s_j.dtype)
             ) * s_j
             G.sub_(torch.outer(int_step.to(s_j.dtype) * s_j, H_orig[j, :]))
+            L_row.add_(best_gain * improve.to(best_gain.dtype)).clamp_min_(1e-12)
             streak = 0
 
         total_improved += sweep_improved
@@ -328,11 +339,11 @@ class GPTQReQuant:
         static_groups=False,
         export_to_et=False,
         alpha=0.25,
-        requant_sweeps=3,
+        requant_sweeps=4,
         requant_candidates=2,
         requant_anchor_lambda=0.0,
         requant_beta=0.3,
-        requant_min_gain_eps=0.0,
+        requant_min_gain_eps=0.2,
         requant_early_stop_consecutive_cols=0,
         **extra_kwargs,
     ):
@@ -482,26 +493,29 @@ class GPTQReQuant:
 
         if need_requant:
             dXXT_refine = dXXT_saved if has_dXXT_correction else None
-            layer_gain_scale = (
-                torch.diag(H_orig).float().mean() * Scale.float().pow(2).mean()
-            )
-            min_gain_eps_layer = (
-                float(requant_min_gain_eps) * float(layer_gain_scale.item())
+            eps_mean = (
+                float(requant_min_gain_eps)
+                * float(
+                    (
+                        torch.diag(H_orig).float().view(1, -1)
+                        * (W_orig - Q).float().pow(2)
+                    ).mean().item()
+                )
             )
             rq_cfg = ReQuantConfig(
                 num_sweeps=requant_sweeps,
                 num_candidates=requant_candidates,
                 beta=requant_beta,
                 lambda_anchor=requant_anchor_lambda,
-                min_gain_eps=min_gain_eps_layer,
+                min_gain_eps=requant_min_gain_eps,
                 early_stop_consecutive_cols=requant_early_stop_consecutive_cols,
             )
             logging.info(
                 "Phase-2 requant: mode=%s sweeps=%d cand=%d alpha=%.3f beta=%.3f "
-                "anchor=%.4g eps_raw=%.4g eps_layer=%.4g early=%d dXXT=%s",
+                "anchor=%.4g eps_raw=%.4g eps_lrow_mean=%.4g early=%d dXXT=%s",
                 "gptaq" if self.use_phase1_dxxt else "gptq",
                 requant_sweeps, requant_candidates, alpha, rq_cfg.beta,
-                requant_anchor_lambda, requant_min_gain_eps, min_gain_eps_layer,
+                requant_anchor_lambda, requant_min_gain_eps, eps_mean,
                 requant_early_stop_consecutive_cols, has_dXXT_correction,
             )
             Q, W_int, n_improved = requant_from_config(
@@ -622,7 +636,7 @@ def requant_layer(
     requant_beta = getattr(args, "requant_beta", None)
     if requant_beta is None:
         requant_beta = 0.3
-    min_gain_eps = getattr(args, "requant_min_gain_eps", 0.003)
+    min_gain_eps = getattr(args, "requant_min_gain_eps", 0.2)
     percdamp = getattr(args, "percdamp", 0.01)
     nsamples = inps.shape[0]
     sample_indices = range(nsamples) if input_indices is None else input_indices
@@ -731,15 +745,12 @@ def requant_layer(
             min_int = -(maxq + 1) if quantizer.sym else 0
             max_int = maxq
 
-            eps_layer = min_gain_eps * float(
-                torch.diag(H_orig).float().mean() * scale.pow(2).mean()
-            )
             cfg_rq = ReQuantConfig(
                 num_sweeps=sweeps,
                 num_candidates=num_candidates,
                 beta=requant_beta,
                 lambda_anchor=0.0,
-                min_gain_eps=eps_layer,
+                min_gain_eps=min_gain_eps,
                 early_stop_consecutive_cols=0,
             )
             Q_new, _, n_upd = requant_from_config(
