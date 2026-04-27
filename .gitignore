@@ -2,6 +2,7 @@
 /datasets/
 /outputs/
 /cache/
+/logs/
 __pycache__/
 *.pt
 *.pth
