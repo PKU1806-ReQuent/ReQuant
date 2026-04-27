@@ -137,7 +137,7 @@ def gptq_fwrd_data_parallel(
             requant_beta = 0.3
         requant_kwargs = dict(
             export_to_et=getattr(args, "export_to_et", False),
-            requant_sweeps=getattr(args, "requant_phase2_sweeps", 3),
+            requant_sweeps=getattr(args, "requant_phase2_sweeps", 4),
             requant_candidates=getattr(args, "requant_phase2_candidates", 2),
             requant_anchor_lambda=getattr(args, "requant_anchor_lambda", 0.0),
             requant_beta=requant_beta,
