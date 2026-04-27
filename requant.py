@@ -649,11 +649,11 @@ def requant_layer(
         cols = first_mod.weight.shape[1]
 
         H = torch.zeros(cols, cols, device=dev)
-        dXXT = torch.zeros(cols, cols, device=dev)
         n_acc = 0
         fp_cache = None if fp_inputs_cache is None else fp_inputs_cache.get(names[0])
         cache_pos = 0
         use_dxxt = fp_cache is not None
+        dXXT = torch.zeros(cols, cols, device=dev) if use_dxxt else None
 
         def _hook(_m, inp, _out, _H=H, _dXXT=dXXT):
             nonlocal n_acc, cache_pos
@@ -691,22 +691,29 @@ def requant_layer(
 
         if dist.is_available() and dist.is_initialized():
             n_buf = torch.tensor([float(n_acc)], device=dev, dtype=torch.float64)
-            H_acc = H * float(n_acc)
-            d_acc = dXXT * float(n_acc)
+            # In-place scale-then-reduce avoids cloning H/dXXT (saves 2x matrix
+            # size at peak). Safe here because the local H/dXXT are not reused
+            # after this block; they are overwritten with the global average.
+            H.mul_(float(n_acc))
+            if use_dxxt:
+                dXXT.mul_(float(n_acc))
             dist.all_reduce(n_buf, op=dist.ReduceOp.SUM, group=group)
-            dist.all_reduce(H_acc, op=dist.ReduceOp.SUM, group=group)
-            dist.all_reduce(d_acc, op=dist.ReduceOp.SUM, group=group)
+            dist.all_reduce(H, op=dist.ReduceOp.SUM, group=group)
+            if use_dxxt:
+                dist.all_reduce(dXXT, op=dist.ReduceOp.SUM, group=group)
             n_total = float(n_buf.item())
             if n_total <= 0:
                 raise RuntimeError(
                     f"requant_layer layers.{layer_idx}: no calibration samples collected."
                 )
-            H = H_acc / n_total
-            dXXT = d_acc / n_total
+            H.div_(n_total)
+            if use_dxxt:
+                dXXT.div_(n_total)
 
         dead = torch.diag(H) == 0
         H[dead, dead] = 1
-        dXXT[:, dead] = 0
+        if use_dxxt:
+            dXXT[:, dead] = 0
         H_orig = H.clone()
         H.diagonal().add_(percdamp * torch.mean(torch.diag(H)))
 
