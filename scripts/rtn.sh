@@ -7,7 +7,7 @@ NPROC=${3:-4}
 
 MODEL_NAME=$(basename "${MODEL_PATH}")
 EXP=${EXP:-rtn}
-N_SAMPLES=${N_SAMPLES:-1024}
+N_SAMPLES=${N_SAMPLES:-512}
 SEQ_LEN=${SEQ_LEN:-2048}
 A_BITS=${A_BITS:-16}
 A_CLIP_RATIO=${A_CLIP_RATIO:-0.9}
@@ -17,7 +17,7 @@ REQUANT=${REQUANT:-0}
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-1}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
 REQUANT_BETA=${REQUANT_BETA:-0.3}
-REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.003}
+REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.2}
 ROTATE=${ROTATE:-0}
 REQUANT_TAG=""
 if [[ "${REQUANT}" == "1" ]]; then
@@ -45,6 +45,10 @@ PYTHON_BIN="${PYTHON_BIN:-$(command -v python)}"
 echo "[Info] ranks=${NPROC} GPUs=${GPU_LIST} MASTER_ADDR=${MASTER_ADDR} MASTER_PORT=${MASTER_PORT}"
 
 EXTRA_ARGS=()
+if [[ "${DP_SHARD_INPS:-1}" == "1" ]]; then
+  EXTRA_ARGS+=(--dp_shard_inps)
+  echo "[Info] dp_shard_inps=1 (per-rank activation shard; rank0 CPU capture + scatter)"
+fi
 if [[ "${ROTATE}" == "1" ]]; then
   EXTRA_ARGS+=(--rotate)
   echo "[Info] rotate=1 (SpinQuant-style hadamard rotation)"

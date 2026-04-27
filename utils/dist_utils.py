@@ -42,6 +42,8 @@ def is_main():
 
 def broadcast_parameters(module: nn.Module, src: Any = 0, group: Optional[Any] = None):
     for param in module.parameters():
+        if not param.data.is_contiguous():
+            param.data = param.data.contiguous()
         dist.broadcast(param.data, src=src, group=group)
 
 

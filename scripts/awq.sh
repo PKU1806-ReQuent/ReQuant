@@ -20,7 +20,7 @@ AWQ_MAX_ALPHA=${AWQ_MAX_ALPHA:-1.0}
 REQUANT=${REQUANT:-0}
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-1}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
-REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.003}
+REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.2}
 REQUANT_TAG=""
 if [[ "${REQUANT}" == "1" ]]; then
   REQUANT_TAG="_requant_s${REQUANT_SWEEPS}_c${REQUANT_CANDIDATES}"
@@ -73,7 +73,7 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --model "${MODEL_PATH}" \
     --exp "${EXP}" \
     --dataset wikitext2 --nsamples "${N_SAMPLES}" --seq_len "${SEQ_LEN}" \
-    --w_method awq --w_bits 4 --w_clip --w_asym \
+    --w_method awq --w_bits 4 --w_clip --w_asym --a_bits 4 \
     --awq_grid "${AWQ_GRID}" \
     --awq_min_alpha "${AWQ_MIN_ALPHA}" \
     --awq_max_alpha "${AWQ_MAX_ALPHA}" \

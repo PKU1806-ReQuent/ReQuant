@@ -78,7 +78,7 @@ class ReQuantConfig:
     num_candidates: int = 2
     beta: float = 0.3
     lambda_anchor: float = 0.0
-    min_gain_eps: float = 0.0
+    min_gain_eps: float = 0.2
     early_stop_consecutive_cols: int = 0
 
 
@@ -258,7 +258,7 @@ def requant(
     num_candidates: int,
     num_sweeps: int,
     lambda_anchor: float = 0.0,
-    min_gain_eps: float = 0.0,
+    min_gain_eps: float = 0.2,
     early_stop_consecutive_cols: int = 0,
 ):
     """Same as :func:`requant_from_config` with flat hyperparameters."""

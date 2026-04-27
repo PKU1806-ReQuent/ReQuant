@@ -102,7 +102,7 @@ def parse_gen():
         "--requant_anchor_lambda",
         dest="requant_anchor_lambda",
         type=float,
-        default=0.0,
+        default=0.2,
         help="Phase-2 requant: anchor λ to keep Q near Phase-1 init (GPTQReQuant)",
     )
     parser.add_argument(
@@ -142,6 +142,30 @@ def parse_gen():
         type=float,
         default=1e-4,
         help="awq only: minimum scale clamp value",
+    )
+    parser.add_argument(
+        "--awq_search_samples",
+        type=int,
+        default=128,
+        help="awq only: number of global calibration samples used for output-MSE scale search",
+    )
+    parser.add_argument(
+        "--awq_clip_tokens",
+        type=int,
+        default=512,
+        help="awq only: maximum sampled tokens per layer used for AWQ clipping",
+    )
+    parser.add_argument(
+        "--awq_clip_grid",
+        type=int,
+        default=20,
+        help="awq only: grid size for AWQ clipping search",
+    )
+    parser.add_argument(
+        "--awq_clip_max_shrink",
+        type=float,
+        default=0.5,
+        help="awq only: maximum shrink ratio for AWQ clipping search",
     )
     parser.add_argument("--kl_topk", type=int, default=-1, help="Top-k KL loss")
     parser.add_argument("--bsz", type=int, default=1, help="Batch size for computing hessians and gradients")
