@@ -12,6 +12,7 @@ SEQ_LEN=${SEQ_LEN:-2048}
 A_BITS=${A_BITS:-16}
 A_CLIP_RATIO=${A_CLIP_RATIO:-0.9}
 A_ASYM=${A_ASYM:-1}
+ENABLE_AQ_CALIBRATION=${ENABLE_AQ_CALIBRATION:-1}
 REQUANT=${REQUANT:-0}
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-4}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
@@ -59,6 +60,12 @@ if [[ "${A_BITS}" != "16" ]]; then
   [[ "${A_ASYM}" == "1" ]] && EXTRA_ARGS+=(--a_asym)
   echo "[Info] activation quant: A_BITS=${A_BITS} A_CLIP_RATIO=${A_CLIP_RATIO} A_ASYM=${A_ASYM}"
 fi
+if [[ "${ENABLE_AQ_CALIBRATION}" == "1" ]]; then
+  EXTRA_ARGS+=(--enable_aq_calibration)
+else
+  EXTRA_ARGS+=(--no-enable_aq_calibration)
+fi
+echo "[Info] enable_aq_calibration=${ENABLE_AQ_CALIBRATION}"
 if [[ "${REQUANT}" == "1" ]]; then
   EXTRA_ARGS+=(
     --requant_sweeps "${REQUANT_SWEEPS}"
