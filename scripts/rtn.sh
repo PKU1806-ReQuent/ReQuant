@@ -9,11 +9,19 @@ MODEL_NAME=$(basename "${MODEL_PATH}")
 EXP=${EXP:-rtn}
 N_SAMPLES=${N_SAMPLES:-1024}
 SEQ_LEN=${SEQ_LEN:-2048}
+A_BITS=${A_BITS:-16}
+A_CLIP_RATIO=${A_CLIP_RATIO:-0.9}
+A_ASYM=${A_ASYM:-1}
 REQUANT=${REQUANT:-0}
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-4}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
 REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.2}
 ROTATE=${ROTATE:-0}
+ACT_TAG=""
+if [[ "${A_BITS}" != "16" ]]; then
+  ACT_TAG="_a${A_BITS}"
+  [[ "${A_ASYM}" == "1" ]] && ACT_TAG="${ACT_TAG}_aasym"
+fi
 REQUANT_TAG=""
 if [[ "${REQUANT}" == "1" ]]; then
   REQUANT_TAG="_requant_s${REQUANT_SWEEPS}_c${REQUANT_CANDIDATES}"
@@ -29,7 +37,7 @@ if [[ "${NPROC}" -gt 1 ]]; then
   DP_TAG="_dp${NPROC}"
   ENTRYPOINT="./ptq_rtn_dp.py"
 fi
-SAVE_QMODEL_PATH="./outputs/${MODEL_NAME}/${EXP}/rtn_w4_ns${N_SAMPLES}${ROTATE_TAG}${REQUANT_TAG}${DP_TAG}.pt"
+SAVE_QMODEL_PATH="./outputs/${MODEL_NAME}/${EXP}/rtn_w4${ACT_TAG}_ns${N_SAMPLES}${ROTATE_TAG}${REQUANT_TAG}${DP_TAG}.pt"
 
 # Set environment variables
 export CUDA_VISIBLE_DEVICES=${DEVICE}
@@ -46,6 +54,11 @@ if [[ "${ROTATE}" == "1" ]]; then
     echo "[Info] optimized_rotation_path=${OPTIMIZED_ROTATION_PATH}"
   fi
 fi
+if [[ "${A_BITS}" != "16" ]]; then
+  EXTRA_ARGS+=(--a_bits "${A_BITS}" --a_clip_ratio "${A_CLIP_RATIO}")
+  [[ "${A_ASYM}" == "1" ]] && EXTRA_ARGS+=(--a_asym)
+  echo "[Info] activation quant: A_BITS=${A_BITS} A_CLIP_RATIO=${A_CLIP_RATIO} A_ASYM=${A_ASYM}"
+fi
 if [[ "${REQUANT}" == "1" ]]; then
   EXTRA_ARGS+=(
     --requant_sweeps "${REQUANT_SWEEPS}"
@@ -55,7 +68,7 @@ if [[ "${REQUANT}" == "1" ]]; then
   echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
 fi
 
-echo "[Info] model=${MODEL_PATH} device=${DEVICE} nproc=${NPROC} rotate=${ROTATE} requant=${REQUANT}"
+echo "[Info] model=${MODEL_PATH} device=${DEVICE} nproc=${NPROC} rotate=${ROTATE} requant=${REQUANT} a_bits=${A_BITS}"
 echo "[Info] entrypoint=${ENTRYPOINT} MASTER_PORT=${MASTER_PORT}"
 echo "[Info] Save path: ${SAVE_QMODEL_PATH}"
 

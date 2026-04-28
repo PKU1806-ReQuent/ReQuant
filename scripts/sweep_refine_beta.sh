@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sweep GPTAQ+ReQuant Phase-2 beta with fixed requant sweeps=2.
+# Sweep GPTAQ+ReQuant Phase-2 beta with fixed requant sweeps=4.
 #
 # Usage:
 #   bash scripts/sweep_refine_beta.sh [model path] [visible GPU list] [nproc]
@@ -21,7 +21,7 @@ export A_BITS ENABLE_AQ_CALIBRATION
 BETA_LIST=${BETA_LIST:-"0.3"}
 
 # Keep sweeps fixed as requested.
-REQUANT_SWEEPS_FIXED=2
+REQUANT_SWEEPS_FIXED=4
 
 RUN_TAG=${RUN_TAG:-"_rbeta_sweep_$(date +%y%m%d_%H%M%S)"}
 
