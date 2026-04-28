@@ -92,6 +92,14 @@ def parse_args():
         action="store_true",
         help="Enable when evaluating checkpoints quantized with --rotate",
     )
+    p.add_argument("--a_bits", type=int, default=16)
+    p.add_argument("--a_groupsize", type=int, default=-1)
+    p.add_argument("--a_asym", action="store_true")
+    p.add_argument("--a_clip_ratio", type=float, default=1.0)
+    p.add_argument("--v_bits", type=int, default=16)
+    p.add_argument("--v_groupsize", type=int, default=-1)
+    p.add_argument("--v_asym", action="store_true")
+    p.add_argument("--v_clip_ratio", type=float, default=1.0)
     return p.parse_args()
 
 
@@ -120,6 +128,7 @@ def main():
     if args.rotate:
         logging.info("rotate=1: configure down_proj online Hadamard (match ptq_dp.py)")
         _configure_rotate_down_proj(model)
+    quant_utils.configure_actquant_from_args(args, model)
 
     logging.info("Loading weights from %s", args.load_qmodel_path)
     # These checkpoints may include custom objects, so disable weights_only when available.

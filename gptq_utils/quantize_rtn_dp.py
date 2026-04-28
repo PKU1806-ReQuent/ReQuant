@@ -1,5 +1,9 @@
 # coding=utf-8
-"""Weight quantization entry for RTN with torchrun data parallelism."""
+"""
+Weight quantization entry for RTN with distributed layer-parallel execution.
+
+Use with ``torchrun --nproc_per_node=R`` and ``ptq_rtn_dp.py``.
+"""
 
 import logging
 import os
@@ -8,12 +12,11 @@ import torch
 import transformers
 from accelerate.hooks import remove_hook_from_module
 
-from gptq_utils.dp_common import resolve_local_cuda_device
-from gptq_utils.rtn_dp_utils import rtn_fwrd_data_parallel
-from utils import data_utils, dist_utils, model_utils
+from gptq_utils.rtn_dp_utils import resolve_local_cuda_device, rtn_fwrd_data_parallel
+from utils import dist_utils, model_utils
 
 
-def quantize_weights_rtn_dp(args, analyzer: model_utils.ModelAnalyzer):
+def quantize_weights_rtn_dp(args, analyzer: model_utils.ModelAnalyzer, dataloader=None):
     transformers.set_seed(args.seed)
 
     model = analyzer.model
@@ -29,27 +32,11 @@ def quantize_weights_rtn_dp(args, analyzer: model_utils.ModelAnalyzer):
         save_dict = torch.load(args.load_qmodel_path)
         model.load_state_dict(save_dict["model"])
     else:
-        trainloader = None
-        if getattr(args, "requant_sweeps", 0) > 0:
-            trainloader = data_utils.get_tokens(
-                args.dataset,
-                "train",
-                analyzer.tokenizer,
-                args.seq_len,
-                args.nsamples,
-                args.tokens_cache_path,
-                args.seed,
-            )
-            if isinstance(trainloader[0], torch.Tensor):
-                assert trainloader[0].dim() == 1
-                logging.info("Reformatting input tokens to tuple + Unsqueeze")
-                trainloader = [(x.unsqueeze(0), None) for x in trainloader]
-
         dev = resolve_local_cuda_device()
         if dev.type == "cuda":
             torch.cuda.set_device(dev)
 
-        quantizers = rtn_fwrd_data_parallel(args, analyzer, trainloader, dev)
+        quantizers = rtn_fwrd_data_parallel(args, analyzer, dev, dataloader=dataloader)
         save_dict["w_quantizers"] = quantizers
 
     if args.save_qmodel_path and dist_utils.is_main():

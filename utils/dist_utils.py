@@ -42,6 +42,7 @@ def is_main():
 
 def broadcast_parameters(module: nn.Module, src: Any = 0, group: Optional[Any] = None):
     for param in module.parameters():
+        # NCCL broadcast requires contiguous tensors.
         if not param.data.is_contiguous():
             param.data = param.data.contiguous()
         dist.broadcast(param.data, src=src, group=group)
@@ -66,7 +67,9 @@ def print_on_main(*args, **kwargs):
 
 
 def distribute_model(model) -> None:
-    no_split_module_classes = ["Qwen3DecoderLayer", "Qwen3MoeForCausalLM", "LlamaDecoderLayer"]
+    # Qwen3MoeForCausalLM is the top-level model class, not a decoder layer;
+    # no_split should only list per-layer classes to prevent splitting a layer across devices.
+    no_split_module_classes = ["Qwen3DecoderLayer", "Qwen3MoeDecoderLayer", "LlamaDecoderLayer"]
     max_memory = get_balanced_memory(
         model,
         no_split_module_classes=no_split_module_classes,
@@ -76,11 +79,14 @@ def distribute_model(model) -> None:
         model, max_memory=max_memory, no_split_module_classes=no_split_module_classes
     )
 
+    # Do NOT pass state_dict here: the model is already on CPU with correct weights.
+    # Passing state_dict=model.state_dict() creates a redundant full-weight copy (~16 GB
+    # for 8B models) before dispatch_model moves tensors to their target devices.
+    # offload_buffers=False: keep all buffers (ActQuantWrapper scale/zero/maxq etc.) on GPU;
+    # offloading them to disk causes device mismatches and numerical differences vs single-GPU eval.
     dispatch_model(
         model,
         device_map=device_map,
-        offload_buffers=True,
-        offload_dir="offload",
-        state_dict=model.state_dict(),
+        offload_buffers=False,
     )
     memory_utils.cleanup_memory()
