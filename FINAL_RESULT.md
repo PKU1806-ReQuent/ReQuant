@@ -17,6 +17,36 @@ MODEL_PATH = /apdcephfs_fsgm/share_304739527/peterfywang/model_zoo/Qwen3-14B
 
 ---
 
+## Qwen3-14B · W4A4 · Quarot（Baselines）
+
+MODEL_PATH = /apdcephfs_fsgm/share_304739527/peterfywang/model_zoo/Qwen3-14B
+
+说明：W4A4 激活量化（`--a_bits 4 --a_asym 1 --a_clip_ratio 0.9`），权重 4bit，开启 Quarot 旋转。RTN/AWQ 已走 DP 路径（与 GPTAQ/GPTQ 同为 8 卡 DP）。日志位于 `logs_14b_w4a4/0{1..4}_*.log`。
+
+| Method | Model | Quant Time | KL-wikitext2 | PPL-wikitext2 | KL-uItrachat_2k | PPL-ultrachat_2k | KL-numinamath | PPL-numinamath | arc-challenge | arc-easy | boolq | ceval-valid | hellaswag | lambada openai | openbookqa | piqa | social_iqa | winogrande | acc_avg |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FP | Qwen3-14B | — | -1.56e-05 | 8.65 | 4.53e-06 | 4.98 | 6.12e-05 | 3.36 | 60.32 | 82.95 | 89.30 | 82.32 | 78.82 | 67.82 | 46.40 | 79.87 | 52.05 | 72.53 | 71.24 |
+| GPTAQ+Quarot | Qwen3-14B | 35.3 min | 1.58e-01 | 9.73 | 1.49e-01 | 5.03 | 1.06e-01 | 3.47 | 55.20 | 78.41 | 86.73 | 74.00 | 74.25 | 64.23 | 42.40 | 77.15 | 48.82 | 68.98 | 67.02 |
+| GPTQ+Quarot  | Qwen3-14B | 31.4 min | 1.55e-01 | 9.71 | 1.31e-01 | 5.03 | 8.84e-02 | 3.37 | 56.83 | 77.48 | 86.70 | 76.37 | 74.69 | 65.38 | 44.80 | 78.18 | 48.77 | 70.32 | 67.95 |
+| RTN+Quarot   | Qwen3-14B | 15.6 min | 3.22e-01 | 11.44 | 2.55e-01 | 5.37 | 1.86e-01 | 3.41 | 48.72 | 73.40 | 84.98 | 74.15 | 72.26 | 64.20 | 41.40 | 76.55 | 46.21 | 67.80 | 64.97 |
+| AWQ+Quarot   | Qwen3-14B | 87.3 min | 3.15e-01 | 11.16 | 2.55e-01 | 5.32 | 1.80e-01 | 3.38 | 50.51 | 73.23 | 84.59 | 73.55 | 72.86 | 62.80 | 41.00 | 76.93 | 46.88 | 68.59 | 65.09 |
+
+> Quant Time 口径与 W4A16 一致：**首条 `[INFO]` 时间戳 → `Evaluating KL&PPL on wikitext2` 时间戳** 的差值，不含 KL/PPL 评估与 lm_eval 零样本评估。`RTN/AWQ` 采用的 `rtn_dp/awq_dp` 配置（`dp_shard_inps=1`、`nsamples=1024/512`），与 GPTAQ/GPTQ 均为 8×GPU DP。
+
+### 与 W4A16 baseline 的退化幅度（acc_avg）
+
+| Method | W4A16 acc_avg | W4A4 acc_avg | Δ |
+|---|---:|---:|---:|
+| FP    | 71.24 | 71.24 | — |
+| GPTAQ+Quarot | 70.49 | 67.02 | **−3.47** |
+| GPTQ+Quarot  | 70.52 | 67.95 | **−2.57** |
+| RTN+Quarot   | 68.03 | 64.97 | **−3.06** |
+| AWQ+Quarot   | 68.53 | 65.09 | **−3.44** |
+
+W4A4 下四种方法的相对排序为 **GPTQ > GPTAQ > AWQ ≈ RTN**，与 W4A16 基本一致；PPL/KL 也随之整体变差约 1 个 PPL 点（wikitext2）。ReQuant 在 W4A4 上的增益评估待后续补跑。
+
+---
+
 ## Smoke Test · Qwen3-0.6B · W4A16（lm_eval only）
 
 MODEL_PATH = /apdcephfs_fsgm/share_304739527/peterfywang/model_zoo/Qwen3-0.6B

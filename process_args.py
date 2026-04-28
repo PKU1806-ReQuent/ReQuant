@@ -158,7 +158,7 @@ def parse_gen():
     parser.add_argument(
         "--dp_shard_inps",
         action="store_true",
-        help="gptaq DP with optional ReQuant: rank0 captures full calibration activations on CPU, scatters per-rank "
+        help="DP PTQ with optional ReQuant: rank0 captures full calibration activations on CPU, scatters per-rank "
         "shards so each GPU holds only ~1/world_size of inps/fp_inps. Layer-wise updates run locally per "
         "shard (weights are already synced). Reduces per-GPU VRAM vs a full [nsamples,seqlen,hidden] buffer.",
     )

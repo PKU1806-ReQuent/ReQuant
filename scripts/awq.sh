@@ -15,6 +15,9 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-./outputs}"
 EXP=awq_dp
 N_SAMPLES=${N_SAMPLES:-512}
 SEQ_LEN=${SEQ_LEN:-2048}
+A_BITS=${A_BITS:-16}
+A_CLIP_RATIO=${A_CLIP_RATIO:-0.9}
+A_ASYM=${A_ASYM:-1}
 AWQ_GRID=${AWQ_GRID:-20}
 AWQ_MIN_ALPHA=${AWQ_MIN_ALPHA:-0.0}
 AWQ_MAX_ALPHA=${AWQ_MAX_ALPHA:-1.0}
@@ -22,6 +25,11 @@ REQUANT=${REQUANT:-0}
 OFFLOAD_INPS=${OFFLOAD_INPS:-1}
 OFFLOAD_INPS_FLAG=""
 if [[ "${OFFLOAD_INPS}" == "1" ]]; then OFFLOAD_INPS_FLAG="--offload_inps"; fi
+ACT_TAG=""
+if [[ "${A_BITS}" != "16" ]]; then
+  ACT_TAG="_a${A_BITS}"
+  [[ "${A_ASYM}" == "1" ]] && ACT_TAG="${ACT_TAG}_aasym"
+fi
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-1}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
 REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.003}
@@ -36,7 +44,7 @@ if [[ "${ROTATE:-1}" == "1" ]]; then
     ROTATE_TAG="${ROTATE_TAG}_optrot"
   fi
 fi
-SAVE_QMODEL_PATH="${OUTPUT_ROOT}/${MODEL_NAME}/${EXP}/awq_dp_w4_ns${N_SAMPLES}_g${AWQ_GRID}_a${AWQ_MIN_ALPHA}-${AWQ_MAX_ALPHA}_dp${NPROC}${ROTATE_TAG}${REQUANT_TAG}.pt"
+SAVE_QMODEL_PATH="${OUTPUT_ROOT}/${MODEL_NAME}/${EXP}/awq_dp_w4${ACT_TAG}_ns${N_SAMPLES}_g${AWQ_GRID}_a${AWQ_MIN_ALPHA}-${AWQ_MAX_ALPHA}_dp${NPROC}${ROTATE_TAG}${REQUANT_TAG}.pt"
 
 export CUDA_VISIBLE_DEVICES=${GPU_LIST}
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
@@ -49,8 +57,12 @@ echo "[Info] DP ranks=${NPROC} GPUs=${GPU_LIST} MASTER_ADDR=${MASTER_ADDR} MASTE
 echo "[Info] output_dir=${OUTPUT_ROOT}/${MODEL_NAME}/${EXP}/ (logs in logs/)"
 echo "[Info] Save path: ${SAVE_QMODEL_PATH}"
 echo "[Info] requant=${REQUANT}"
+echo "[Info] activation quant: A_BITS=${A_BITS} A_CLIP_RATIO=${A_CLIP_RATIO} A_ASYM=${A_ASYM}"
 
 EXTRA_ARGS=()
+if [[ "${A_ASYM}" == "1" ]]; then
+  EXTRA_ARGS+=(--a_asym)
+fi
 if [[ "${DP_SHARD_INPS:-1}" == "1" ]]; then
   EXTRA_ARGS+=(--dp_shard_inps)
   echo "[Info] dp_shard_inps=1 (per-rank activation shard; rank0 CPU capture + scatter)"
@@ -88,6 +100,7 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --awq_grid "${AWQ_GRID}" \
     --awq_min_alpha "${AWQ_MIN_ALPHA}" \
     --awq_max_alpha "${AWQ_MAX_ALPHA}" \
+    --a_bits "${A_BITS}" --a_clip_ratio "${A_CLIP_RATIO}" \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
     ${OFFLOAD_INPS_FLAG} \

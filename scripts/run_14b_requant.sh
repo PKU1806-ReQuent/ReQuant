@@ -31,7 +31,7 @@ export REQUANT_BETA="${REQUANT_BETA:-0.3}"
 export REQUANT_MIN_GAIN_EPS="${REQUANT_MIN_GAIN_EPS:-0.2}"
 # Anchor left unset (disabled). Set REQUANT_ANCHOR_LAMBDA=0.05 to enable if needed.
 
-# Real 8-GPU DP for GPTQ/GPTAQ/AWQ (RTN script is single-GPU by design).
+# Real 8-GPU DP for GPTQ/GPTAQ/RTN/AWQ.
 export DP_SHARD_INPS="${DP_SHARD_INPS:-1}"
 export DP_FASTERQUANT_MASTER_ONLY="${DP_FASTERQUANT_MASTER_ONLY:-1}"
 export OFFLOAD_INPS="${OFFLOAD_INPS:-0}"
@@ -63,9 +63,10 @@ run_step 07_gptq_w4a16_rot_requant \
     env A_BITS=16 MASTER_PORT=29711 \
     bash scripts/gptq.sh "${MODEL}" "${GPUS_8}" 8
 
-# 3) RTN + Quarot + ReQuant (single-GPU, fastest)
+# 3) RTN + Quarot + ReQuant (8-GPU DP)
 run_step 08_rtn_w4a16_rot_requant \
-    bash scripts/rtn.sh "${MODEL}" 0
+    env MASTER_PORT=29741 \
+    bash scripts/rtn.sh "${MODEL}" "${GPUS_8}" 8
 
 # 4) AWQ + Quarot + ReQuant (8-GPU DP)
 run_step 09_awq_w4a16_rot_requant \
