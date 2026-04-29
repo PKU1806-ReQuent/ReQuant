@@ -7,7 +7,7 @@
 # Example:
 #   REQUANT=1 ROTATE=1 A_BITS=4 bash scripts/gptaq.sh ./modelzoo/Meta-Llama-3-8B "0,1,2,3" 4
 
-MODEL_PATH=${1:-./modelzoo/Qwen3/Qwen3-0.6B}
+MODEL_PATH=${1:-./modelzoo/Llama3/Meta-Llama-3-8B}
 GPU_LIST=${2:-"0,1,2,3"}
 NPROC=${3:-4}
 
@@ -47,13 +47,15 @@ if [[ "${REQUANT}" == "1" ]]; then
   REQUANT_TAG="_requant_s${REQUANT_SWEEPS}_c${REQUANT_CANDIDATES}"
 fi
 
-SAVE_QMODEL_PATH="./outputs/${MODEL_NAME}/${EXP}/gptaq_w4${ACT_TAG}_ns${N_SAMPLES}_a${ALPHA}_n${NPROC}${ROTATE_TAG}${REQUANT_TAG}.pt"
+SAVE_QMODEL_PATH="./outputs/${MODEL_NAME}/${EXP}/gptaq_w4${ACT_TAG}_ns${N_SAMPLES}_a${ALPHA}${ROTATE_TAG}${REQUANT_TAG}.pt"
 
 export CUDA_VISIBLE_DEVICES=${GPU_LIST}
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
 export MASTER_PORT="${MASTER_PORT:-29620}"
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python)}"
+LM_EVAL=${LM_EVAL:-0}
+LM_EVAL_BATCH_SIZE=${LM_EVAL_BATCH_SIZE:-32}
 
 echo "[Info] ranks=${NPROC} GPUs=${GPU_LIST} MASTER_ADDR=${MASTER_ADDR} MASTER_PORT=${MASTER_PORT}"
 echo "[Info] output_dir=./outputs/${MODEL_NAME}/${EXP}/ (logs in logs/)"
@@ -61,6 +63,7 @@ echo "[Info] Save path: ${SAVE_QMODEL_PATH}"
 echo "[Info] dataset=${DATASET} nsamples=${N_SAMPLES} seq_len=${SEQ_LEN}"
 echo "[Info] weight method=gptaq w_asym=${W_ASYM} requant=${REQUANT} rotate=${ROTATE}"
 echo "[Info] activation quant: A_BITS=${A_BITS} A_CLIP_RATIO=${A_CLIP_RATIO} A_ASYM=${A_ASYM}"
+echo "[Info] lm_eval=${LM_EVAL} lm_eval_batch_size=${LM_EVAL_BATCH_SIZE}"
 echo "[Info] python=${PYTHON_BIN}"
 
 EXTRA_ARGS=()
@@ -104,6 +107,9 @@ if [[ "${REQUANT}" == "1" ]]; then
   fi
   echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} beta=${REQUANT_BETA} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
 fi
+if [[ "${LM_EVAL}" == "1" ]]; then
+  EXTRA_ARGS+=(--lm_eval --lm_eval_batch_size "${LM_EVAL_BATCH_SIZE}")
+fi
 
 ${PYTHON_BIN} -m torch.distributed.run \
     --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
@@ -116,5 +122,4 @@ ${PYTHON_BIN} -m torch.distributed.run \
     --alpha "${ALPHA}" \
     "${EXTRA_ARGS[@]}" \
     --save_qmodel_path "${SAVE_QMODEL_PATH}" \
-    --offload_inps \
-    --lm_eval --lm_eval_batch_size 32
+    --offload_inps

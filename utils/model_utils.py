@@ -28,7 +28,6 @@ def load_model(model_str_or_model):
             trust_remote_code=True,
             torch_dtype='auto',
             device_map='cpu',
-            # attn_implementation='eager',
         )
         model.tie_word_embeddings = process_word_embeddings
         if process_word_embeddings:

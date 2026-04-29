@@ -165,7 +165,6 @@ class ActQuantizer(torch.nn.Module):
         if self.groupsize > 0:
             # group-wise per-token quantization
             self.find_params_per_token_groupwise(x)
-            # utils.cleanup_memory(verbos=False)
             return
 
         reshaped_x = x.reshape((-1, x.shape[-1]))
@@ -399,7 +398,6 @@ class WeightQuantizer(torch.nn.Module):
         if self.weight_groupsize > 0:
             # group-wise per-token quantization
             self.find_params_weight_groupwise(x)
-            # utils.cleanup_memory(verbos=False)
             return
         elif self.perchannel:
             x = x.flatten(1)

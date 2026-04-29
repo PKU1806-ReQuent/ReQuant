@@ -5,13 +5,14 @@
 
 set -euo pipefail
 
-MODEL_PATH=${1:-./modelzoo/Qwen3/Qwen3-4B}
+MODEL_PATH=${1:-./modelzoo/Llama3/Meta-Llama-3-8B}
 DEVICE=${2:-0}
-USE_HF_MIRROR=${USE_HF_MIRROR:-1}
+USE_HF_MIRROR=${USE_HF_MIRROR:-0}
 HF_MIRROR_URL=${HF_MIRROR_URL:-https://hf-mirror.com}
-# 默认走实验室代理，避免 lm-eval 里带 commit SHA 的 dataset script 绕过 HF_ENDPOINT 直连 huggingface.co
-# 如需禁用代理，传 PROXY_URL="" 运行
-PROXY_URL=${PROXY_URL-http://162.105.146.48:7890}
+# Optional outbound HTTP(S) proxy for lm-eval dataset downloads (which may
+# bypass HF_ENDPOINT via commit-pinned dataset scripts). Leave empty to skip.
+# Example: PROXY_URL=http://proxy.example.com:7890
+PROXY_URL=${PROXY_URL-}
 LM_EVAL_BATCH_SIZE=${LM_EVAL_BATCH_SIZE:-4}
 PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 TASKS=${TASKS:-}
@@ -24,7 +25,7 @@ cd "${REPO_ROOT}" || exit 1
 export CUDA_VISIBLE_DEVICES=${DEVICE}
 export PYTORCH_CUDA_ALLOC_CONF
 export PYTORCH_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF}"
-PYTHON_BIN="${PYTHON_BIN:-/root/miniconda3/envs/gptq/bin/python}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python)}"
 
 if [[ "${USE_HF_MIRROR}" == "1" ]]; then
   export HF_ENDPOINT="${HF_MIRROR_URL}"

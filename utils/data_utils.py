@@ -186,12 +186,6 @@ def _sample_concat_and_tokenize(texts, tokenizer, seq_len, num_samples, seed=Non
     pbar = tqdm(total=num_samples, desc=f"Sampling {num_samples} samples of length {seq_len}")
     while len(samples) < num_samples:
         idx = random.randint(0, trainenc.input_ids.shape[1] - seq_len - 1)
-        
-        # if selected_indices:
-        #     closest_idx = min(selected_indices, key=lambda x: abs(x - idx), default=idx)
-        #     if idx <= closest_idx + seq_len and idx >= closest_idx - seq_len:
-        #         continue
-
         j = idx + seq_len
         inp = trainenc.input_ids[:, idx:j]
         tokens = inp.clone()
@@ -229,7 +223,6 @@ def get_tokens(dataset_name, split, tokenizer, seq_len, num_samples, save_path=N
     logging.info(f"Sampling {num_samples} samples of length {seq_len} from {dataset_name}...")
 
     tokens = _sample_concat_and_tokenize(texts, tokenizer, seq_len, num_samples, seed)
-    # tokens = _sample_and_tokenize(texts, tokenizer, seq_len, num_samples, seed)
 
     if save_path is not None:
         logging.info(f"Saving tokens to {save_path}")
