@@ -38,8 +38,7 @@ activation-aware reconstruction objective through local coordinate updates.
 Because the Frobenius norm decomposes over output rows,
 
 $$
-\| \mathbf{W}\mathbf{X} - \mathbf{W}_q \widetilde{\mathbf{X}} \|_F^2
-=
+\| \mathbf{W}\mathbf{X} - \mathbf{W}_q \widetilde{\mathbf{X}} \|_F^2 =
 \sum_{i=1}^{d_{\mathrm{row}}}
 \| \mathbf{W}_{i,:}\mathbf{X} - \mathbf{W}_{q,i,:}\widetilde{\mathbf{X}} \|_2^2 ,
 $$
@@ -55,10 +54,8 @@ $$
 The row-wise objective becomes
 
 $$
-L(\mathbf{e})
-=
-\| \mathbf{w}\mathbf{X} - \mathbf{q}\widetilde{\mathbf{X}} \|_2^2
-=
+L(\mathbf{e}) =
+\| \mathbf{w}\mathbf{X} - \mathbf{q}\widetilde{\mathbf{X}} \|_2^2 =
 \| \mathbf{e}\widetilde{\mathbf{X}} - \mathbf{w}\Delta\mathbf{X} \|_2^2 .
 $$
 
