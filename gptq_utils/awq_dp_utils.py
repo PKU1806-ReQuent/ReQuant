@@ -582,15 +582,24 @@ def _awq_scale_and_clip_layer(
         )
 
     # ---- Auto clip (applied to the scaled weights / inputs) ----
+    # Aligned with MIT ``auto_clip_block``: clip every Linear except ``q_*`` /
+    # ``k_*`` (which are hard to clip precisely due to the QK bmm). ``v_proj``
+    # is included; it shares the input tensor with ``q_proj`` because both come
+    # from ``input_layernorm.output`` and the Group-1 scale application already
+    # divided that shared input by ``s`` in-place.
     if bool(getattr(args, "awq_auto_clip", 1)):
         clip_targets = {
+            "self_attn.v_proj": v_proj,
             "self_attn.o_proj": o_proj,
             "mlp.gate_proj": gate_proj,
             "mlp.up_proj": up_proj,
             "mlp.down_proj": down_proj,
         }
-        # gate_proj / up_proj share the same input (post_attention_layernorm.output).
+        # v_proj / q_proj share input_layernorm output; gate_proj / up_proj
+        # share post_attention_layernorm output. Reuse the already-scaled
+        # input_feat tensors to avoid an extra FP forward pass.
         clip_inputs = {
+            "self_attn.v_proj": input_feat.get("self_attn.q_proj"),
             "self_attn.o_proj": input_feat.get("self_attn.o_proj"),
             "mlp.gate_proj": input_feat.get("mlp.gate_proj"),
             "mlp.up_proj": input_feat.get("mlp.gate_proj"),
