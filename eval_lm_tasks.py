@@ -27,6 +27,7 @@ execution.
 """
 
 import argparse
+import gc
 import logging
 import os
 import sys
@@ -63,6 +64,32 @@ def parse_args():
     )
     p.add_argument("--seq_len", type=int, default=2048, help="Sequence length for ModelAnalyzer")
     p.add_argument("--lm_eval_batch_size", type=int, default=32)
+    p.add_argument(
+        "--model_device_map",
+        type=str,
+        default=os.environ.get("MODEL_DEVICE_MAP", "auto"),
+        help=(
+            "Device map used when loading the base model. Use 'auto' for "
+            "multi-GPU loading, 'cuda:0' for single large GPU, or 'cpu' for "
+            "the old CPU-first path."
+        ),
+    )
+    p.add_argument(
+        "--checkpoint_load_device",
+        type=str,
+        default="cpu",
+        help=(
+            "Device used by torch.load for the .pt checkpoint. Keep this as "
+            "'cpu' for large models; CPU mmap avoids holding a second full "
+            "copy on GPU."
+        ),
+    )
+    p.add_argument(
+        "--checkpoint_mmap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use torch.load(..., mmap=True) when supported to reduce CPU memory peak.",
+    )
     p.add_argument(
         "--placement",
         type=str,
@@ -105,10 +132,18 @@ def main():
         logging.error("Checkpoint not found: %s", args.load_qmodel_path)
         sys.exit(1)
 
-    logging.info("Loading base model from %s", args.model)
+    os.environ["MODEL_DEVICE_MAP"] = args.model_device_map
+    logging.info(
+        "Loading base model from %s with device_map=%s",
+        args.model,
+        args.model_device_map,
+    )
     analyzer = model_utils.ModelAnalyzer(args.model, args.seq_len)
     model = analyzer.model
-    model.cpu()
+    if args.model_device_map == "cpu":
+        model.cpu()
+    else:
+        logging.info("Keeping base model on load device_map=%s", args.model_device_map)
     remove_hook_from_module(model, recurse=True)
 
     logging.info("add_actquant (structure must match training)")
@@ -118,18 +153,34 @@ def main():
         _configure_rotate_down_proj(model)
     quant_utils.configure_actquant_from_args(args, model)
 
-    logging.info("Loading weights from %s", args.load_qmodel_path)
+    logging.info(
+        "Loading weights from %s (map_location=%s, mmap=%s)",
+        args.load_qmodel_path,
+        args.checkpoint_load_device,
+        args.checkpoint_mmap,
+    )
     # These checkpoints may include custom objects, so disable weights_only when available.
     try:
-        save_dict = torch.load(
-            args.load_qmodel_path, map_location="cpu", weights_only=False
-        )
+        load_kwargs = {
+            "map_location": args.checkpoint_load_device,
+            "weights_only": False,
+        }
+        if args.checkpoint_mmap:
+            load_kwargs["mmap"] = True
+        save_dict = torch.load(args.load_qmodel_path, **load_kwargs)
     except TypeError:
-        save_dict = torch.load(args.load_qmodel_path, map_location="cpu")
+        save_dict = torch.load(
+            args.load_qmodel_path, map_location=args.checkpoint_load_device
+        )
     if "model" not in save_dict:
         logging.error("Checkpoint is missing key 'model'")
         sys.exit(1)
-    missing, unexpected = model.load_state_dict(save_dict["model"], strict=False)
+    state_dict = save_dict["model"]
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    del state_dict, save_dict
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     if missing:
         logging.warning("load_state_dict missing keys (first 20): %s", list(missing)[:20])
     if unexpected:
@@ -137,18 +188,24 @@ def main():
 
     model.eval()
     if torch.cuda.is_available():
-        n_gpu = torch.cuda.device_count()
-        use_dispatch = args.placement == "dispatch" or (
-            args.placement == "auto" and n_gpu > 1
-        )
-        if use_dispatch:
-            logging.info(
-                "dispatch_model across %d visible GPU(s) (same as ptq.py lm_eval)", n_gpu
+        if args.model_device_map == "cpu":
+            n_gpu = torch.cuda.device_count()
+            use_dispatch = args.placement == "dispatch" or (
+                args.placement == "auto" and n_gpu > 1
             )
-            dist_utils.distribute_model(model)
+            if use_dispatch:
+                logging.info(
+                    "dispatch_model across %d visible GPU(s) (same as ptq.py lm_eval)", n_gpu
+                )
+                dist_utils.distribute_model(model)
+            else:
+                model.cuda()
+                logging.info("Model moved to single CUDA device for lm_eval")
         else:
-            model.cuda()
-            logging.info("Model moved to single CUDA device for lm_eval")
+            logging.info(
+                "Model already loaded with device_map=%s; skipping post-load placement",
+                args.model_device_map,
+            )
 
     logging.info("Running qa_eval (same tasks as ptq.py --lm_eval)")
     eval_utils.qa_eval(model, analyzer.tokenizer, args.lm_eval_batch_size)
