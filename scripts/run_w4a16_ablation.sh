@@ -43,7 +43,9 @@ ALPHA=${ALPHA:-0.25}
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-4}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
 REQUANT_BETA=${REQUANT_BETA:-0.25}
-REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-1}
+GPTQ_REQUANT_BETA=${GPTQ_REQUANT_BETA:-0.25}
+GPTAQ_REQUANT_BETA=${GPTAQ_REQUANT_BETA:-0.25}
+REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.2}
 AWQ_NSAMPLES=${AWQ_NSAMPLES:-128}
 AWQ_GRID=${AWQ_GRID:-20}
 AWQ_MIN_ALPHA=${AWQ_MIN_ALPHA:-0.0}
@@ -124,11 +126,17 @@ run_gpt_one() {
   local rotate_tag=""
   local qmodel_path=""
   local launcher=""
+  local method_beta=""
 
   if [[ "${rotate}" == "1" ]]; then
     rotate_tag="_rot"
   fi
   launcher="scripts/${method}.sh"
+  if [[ "${method}" == "gptaq" ]]; then
+    method_beta="${GPTAQ_REQUANT_BETA}"
+  else
+    method_beta="${GPTQ_REQUANT_BETA}"
+  fi
   if [[ "${method}" == "gptaq" ]]; then
     qmodel_path="./outputs/$(basename "${MODEL_PATH}")/${method}/${method}_w4${ACT_TAG}_ns${N_SAMPLES}_a${ALPHA}${rotate_tag}_requant_s${REQUANT_SWEEPS}_c${REQUANT_CANDIDATES}.pt"
   else
@@ -139,7 +147,7 @@ run_gpt_one() {
   echo "============================================================"
   echo "[Run] ${name}"
   echo "[Config] model=${MODEL_PATH} GPUs=${GPU_LIST} nproc=${NPROC}"
-  echo "[Config] method=${method} N_SAMPLES=${N_SAMPLES} SEQ_LEN=${SEQ_LEN} A_BITS=${A_BITS} ROTATE=${rotate} REQUANT=1 REQUANT_BETA=${REQUANT_BETA} REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS}"
+  echo "[Config] method=${method} N_SAMPLES=${N_SAMPLES} SEQ_LEN=${SEQ_LEN} A_BITS=${A_BITS} ROTATE=${rotate} REQUANT=1 REQUANT_BETA=${method_beta} REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS}"
   echo "[Config] qmodel=${qmodel_path}"
   echo "============================================================"
 
@@ -154,7 +162,7 @@ run_gpt_one() {
   REQUANT=1 \
   REQUANT_SWEEPS="${REQUANT_SWEEPS}" \
   REQUANT_CANDIDATES="${REQUANT_CANDIDATES}" \
-  REQUANT_BETA="${REQUANT_BETA}" \
+  REQUANT_BETA="${method_beta}" \
   REQUANT_MIN_GAIN_EPS="${REQUANT_MIN_GAIN_EPS}" \
   LM_EVAL="${LM_EVAL}" \
   LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE}" \
