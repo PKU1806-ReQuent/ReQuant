@@ -14,11 +14,37 @@ from transformers.models.qwen3.modeling_qwen3 import Qwen3DecoderLayer
 LINEAR_LAYERS = (nn.Linear, _ConvNd)
 
 
+def resolve_device_map():
+    """Resolve ``MODEL_DEVICE_MAP`` env var.
+
+    Defaults to ``"cpu"``. Special values:
+      - ``"per_rank"`` / ``"cuda:LOCAL_RANK"``: each rank loads to ``cuda:{LOCAL_RANK}``.
+        Designed for DP runs where each rank should hold the model on its own GPU
+        (e.g. 70B + 198GB cards) instead of duplicating on CPU.
+      - ``"auto"`` / ``"cuda:N"`` / ``"cpu"``: passed through to HF unchanged.
+    """
+    device_map = os.environ.get("MODEL_DEVICE_MAP", "cpu")
+    if device_map in ("per_rank", "cuda:LOCAL_RANK"):
+        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        device_map = f"cuda:{local_rank}"
+    return device_map
+
+
+def keep_model_on_load_device():
+    """True when the caller asked to keep the model on its loaded device.
+
+    Quantize entry points use this to decide whether to force the model back to
+    CPU (the default DP contract), or to leave it where ``load_model`` placed it
+    (per-rank GPU loading for very large models).
+    """
+    return os.environ.get("MODEL_DEVICE_MAP", "cpu") != "cpu"
+
+
 def load_model(model_str_or_model):
     """Returns a model from a string or a model object. If a string is passed, it will be loaded from the HuggingFace"""
     if isinstance(model_str_or_model, str):
         config = AutoConfig.from_pretrained(model_str_or_model)
-        device_map = os.environ.get("MODEL_DEVICE_MAP", "cuda:0")
+        device_map = resolve_device_map()
         process_word_embeddings = False
         if config.tie_word_embeddings:
             config.tie_word_embeddings = False  # TODO. disable tie_word_embeddings by default
@@ -82,7 +108,6 @@ class ModelAnalyzer:
         self.tokenizer = load_tokenizer(model_str_or_model)
         self.config = self.model.config
 
-        self.state_dict = self.model.state_dict()
         assert len(self.config.architectures) == 1
         self.model_arch = self.config.architectures[0]
 

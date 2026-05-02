@@ -35,7 +35,7 @@ NPROC=${3:-4}
 
 N_SAMPLES=${N_SAMPLES:-512}
 SEQ_LEN=${SEQ_LEN:-2048}
-A_BITS=${A_BITS:-16}
+A_BITS=${A_BITS:-4}
 A_ASYM=${A_ASYM:-1}
 A_CLIP_RATIO=${A_CLIP_RATIO:-0.9}
 W_CLIP=${W_CLIP:-1}
@@ -261,23 +261,23 @@ run_awq_one() {
 # run_one "RTN + Rotate + ReQuant ${RUN_PRECISION_TAG}" 1 1
 
 # Default active runs: Llama2-7B W4A16 full ablations.
-run_gpt_one "gptaq" "GPTAQ ${RUN_PRECISION_TAG}" 0 0
-run_gpt_one "gptaq" "GPTAQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
-run_gpt_one "gptaq" "GPTAQ + QuaRot ${RUN_PRECISION_TAG}" 1 0
-run_gpt_one "gptaq" "GPTAQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
+# run_gpt_one "gptaq" "GPTAQ ${RUN_PRECISION_TAG}" 0 0
+# run_gpt_one "gptaq" "GPTAQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
+# run_gpt_one "gptaq" "GPTAQ + QuaRot ${RUN_PRECISION_TAG}" 1 0
+# run_gpt_one "gptaq" "GPTAQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
 
-run_gpt_one "gptq" "GPTQ ${RUN_PRECISION_TAG}" 0 0
-run_gpt_one "gptq" "GPTQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
-run_gpt_one "gptq" "GPTQ + QuaRot ${RUN_PRECISION_TAG}" 1 0
-run_gpt_one "gptq" "GPTQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
+# run_gpt_one "gptq" "GPTQ ${RUN_PRECISION_TAG}" 0 0
+# run_gpt_one "gptq" "GPTQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
+# run_gpt_one "gptq" "GPTQ + QuaRot ${RUN_PRECISION_TAG}" 1 0
+# run_gpt_one "gptq" "GPTQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
 
-run_one "RTN ${RUN_PRECISION_TAG}" 0 0
-run_one "RTN + ReQuant ${RUN_PRECISION_TAG}" 0 1
+# run_one "RTN ${RUN_PRECISION_TAG}" 0 0
+# run_one "RTN + ReQuant ${RUN_PRECISION_TAG}" 0 1
 run_one "RTN + QuaRot ${RUN_PRECISION_TAG}" 1 0
 run_one "RTN + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
 
-run_awq_one "AWQ ${RUN_PRECISION_TAG}" 0 0
-run_awq_one "AWQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
+# run_awq_one "AWQ ${RUN_PRECISION_TAG}" 0 0
+# run_awq_one "AWQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
 run_awq_one "AWQ + QuaRot ${RUN_PRECISION_TAG}" 1 0
 run_awq_one "AWQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
 

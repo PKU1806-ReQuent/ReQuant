@@ -38,6 +38,7 @@ ROTATE=${ROTATE:-1}
 REQUANT=${REQUANT:-0}
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-4}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
+REQUANT_BETA=${REQUANT_BETA:-0.25}
 REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.2}
 
 ACT_TAG=""
@@ -105,9 +106,10 @@ if [[ "${REQUANT}" == "1" ]]; then
   EXTRA_ARGS+=(
     --requant_sweeps "${REQUANT_SWEEPS}"
     --requant_candidates "${REQUANT_CANDIDATES}"
+    --requant_beta "${REQUANT_BETA}"
     --requant_min_gain_eps "${REQUANT_MIN_GAIN_EPS}"
   )
-  echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
+  echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} beta=${REQUANT_BETA} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
 fi
 if [[ "${LM_EVAL}" == "1" ]]; then
   EXTRA_ARGS+=(--lm_eval --lm_eval_batch_size "${LM_EVAL_BATCH_SIZE}")

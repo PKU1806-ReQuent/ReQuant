@@ -31,7 +31,8 @@ def quantize_weights_gptaq_dp(args, analyzer: model_utils.ModelAnalyzer):
     transformers.set_seed(args.seed)
 
     model = analyzer.model
-    model.cpu()
+    if not model_utils.keep_model_on_load_device():
+        model.cpu()
     remove_hook_from_module(model, recurse=True)
 
     if args.w_bits >= 16:

@@ -12,10 +12,10 @@ EXP=${EXP:-rtn}
 N_SAMPLES=${N_SAMPLES:-512}
 SEQ_LEN=${SEQ_LEN:-2048}
 W_ASYM=${W_ASYM:-1}
-# W_CLIP=0 -> classical RTN (pure per-channel min-max).
-# W_CLIP=1 -> RTN + WeightQuantizer MSE clip-ratio search (adds an inner 2D clip
-#             grid per layer; better but no longer "RTN" in the literal sense).
-W_CLIP=${W_CLIP:-0}
+# W_CLIP=1 -> RTN + WeightQuantizer MSE clip-ratio search (the standard RTN
+#             baseline used in QuaRot / SpinQuant / GPTQ paper comparisons).
+# W_CLIP=0 -> classical pure per-channel min-max RTN (textbook definition).
+W_CLIP=${W_CLIP:-1}
 A_BITS=${A_BITS:-16}
 A_CLIP_RATIO=${A_CLIP_RATIO:-0.9}
 A_ASYM=${A_ASYM:-1}
@@ -23,18 +23,12 @@ ENABLE_AQ_CALIBRATION=${ENABLE_AQ_CALIBRATION:-1}
 REQUANT=${REQUANT:-0}
 REQUANT_SWEEPS=${REQUANT_SWEEPS:-4}
 REQUANT_CANDIDATES=${REQUANT_CANDIDATES:-2}
-REQUANT_BETA=${REQUANT_BETA:-0.3}
+REQUANT_BETA=${REQUANT_BETA:-0.25}
 REQUANT_MIN_GAIN_EPS=${REQUANT_MIN_GAIN_EPS:-0.2}
 ROTATE=${ROTATE:-0}
 LM_EVAL=${LM_EVAL:-0}
 LM_EVAL_BATCH_SIZE=${LM_EVAL_BATCH_SIZE:-32}
-if [[ "${ROTATE}" == "1" && "${REQUANT}" != "1" ]]; then
-  W_CLIP=0
-  echo "[Info] ROTATE=1 and REQUANT=0 -> forcing W_CLIP=0"
-elif [[ "${REQUANT}" == "1" && "${W_CLIP}" == "0" ]]; then
-  W_CLIP=1
-  echo "[Info] REQUANT=1 -> enabling W_CLIP=1"
-fi
+echo "[Info] weight clip search: W_CLIP=${W_CLIP}"
 ACT_TAG=""
 if [[ "${A_BITS}" != "16" ]]; then
   ACT_TAG="_a${A_BITS}"
@@ -92,9 +86,10 @@ if [[ "${REQUANT}" == "1" ]]; then
   EXTRA_ARGS+=(
     --requant_sweeps "${REQUANT_SWEEPS}"
     --requant_candidates "${REQUANT_CANDIDATES}"
+    --requant_beta "${REQUANT_BETA}"
     --requant_min_gain_eps "${REQUANT_MIN_GAIN_EPS}"
   )
-  echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
+  echo "[Info] requant sweeps=${REQUANT_SWEEPS} candidates=${REQUANT_CANDIDATES} beta=${REQUANT_BETA} min_gain_eps=${REQUANT_MIN_GAIN_EPS}"
 fi
 
 echo "[Info] model=${MODEL_PATH} device=${DEVICE} nproc=${NPROC} rotate=${ROTATE} requant=${REQUANT} a_bits=${A_BITS}"
