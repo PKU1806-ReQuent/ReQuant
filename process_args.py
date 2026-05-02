@@ -65,11 +65,9 @@ def parse_gen():
     parser.add_argument("--rotate", action="store_true", help="Rotate model (SpinQuant)")
     # GPTQ
     parser.add_argument("--w_method", type=str, default="gptq",
-                        choices=["rtn", "gptq", "gptaq", "gptq_guided", "gptq_plus", "awq"],
+                        choices=["rtn", "gptq", "gptaq", "awq"],
                         help="Weight quantization method")
     parser.add_argument("--act_order", action="store_true", help="Activation reorder (with static groups)")
-    parser.add_argument("--num_groups", type=int, default=4,
-                        help="Number of groups $g$ to use for block-diagonal Hessian")
     parser.add_argument(
         "--percdamp",
         type=float,
@@ -120,6 +118,15 @@ def parse_gen():
         "0 => any strict improvement.",
     )
     parser.add_argument(
+        "--awq_nsamples",
+        type=int,
+        default=128,
+        help="awq only: number of calibration samples used for AWQ scale search / auto-clip. "
+        "Decoupled from --nsamples (which feeds GPTQ/GPTAQ Hessian & ReQuant). Matches "
+        "mit-han-lab/llm-awq entry.py (n_samples=128). Must be <= --nsamples because AWQ "
+        "reuses the first-block-input buffer captured with --nsamples.",
+    )
+    parser.add_argument(
         "--awq_grid",
         type=int,
         default=20,
@@ -144,31 +151,38 @@ def parse_gen():
         help="awq only: minimum scale clamp value",
     )
     parser.add_argument(
-        "--awq_search_samples",
+        "--awq_auto_clip",
         type=int,
-        default=128,
-        help="awq only: number of global calibration samples used for output-MSE scale search",
+        default=1,
+        help="awq only: enable per-row auto-clip (MIT llm-awq auto_clip_layer) after scale search. "
+        "1 to enable, 0 to disable.",
     )
     parser.add_argument(
-        "--awq_clip_tokens",
-        type=int,
-        default=512,
-        help="awq only: maximum sampled tokens per layer used for AWQ clipping",
-    )
-    parser.add_argument(
-        "--awq_clip_grid",
+        "--awq_clip_n_grid",
         type=int,
         default=20,
-        help="awq only: grid size for AWQ clipping search",
+        help="awq auto-clip: number of shrinkage grid points (MIT default 20).",
     )
     parser.add_argument(
         "--awq_clip_max_shrink",
         type=float,
         default=0.5,
-        help="awq only: maximum shrink ratio for AWQ clipping search",
+        help="awq auto-clip: max shrinkage fraction of the original amax (MIT default 0.5).",
     )
-    parser.add_argument("--kl_topk", type=int, default=-1, help="Top-k KL loss")
-    parser.add_argument("--bsz", type=int, default=1, help="Batch size for computing hessians and gradients")
+    parser.add_argument(
+        "--awq_clip_n_sample_token",
+        type=int,
+        default=512,
+        help="awq auto-clip: max number of tokens subsampled from the local calibration set "
+        "for the clip search.",
+    )
+    parser.add_argument(
+        "--awq_fc_fc_scale",
+        type=int,
+        default=0,
+        help="awq only: also search FC->FC scales (up_proj -> down_proj). Off by default because "
+        "this step is not compatible with Hadamard rotation in this repo. 1 to enable.",
+    )
     parser.add_argument("--load_qmodel_path", type=str, default=None, help="The path to load quantized model ckpt")
     parser.add_argument("--save_qmodel_path", type=str, default=None, help="The path to save quantized model ckpt")
     parser.add_argument("--offload_inps", action="store_true", help="Offload inputs to CPU")
@@ -202,14 +216,6 @@ def parse_gen():
     args.log_dir = os.path.join(args.output_dir, "logs")
     args.tokens_cache_path = (f"{args.cache_dir}/tokens/"
                               f"{args.model_name}-{args.dataset}_s{args.nsamples}_blk{args.seq_len}.pt")
-    if args.num_groups is not None:
-        args.saliency_cache_path = (f"{args.cache_dir}/saliency/"
-                                    f"{args.model_name}-{args.dataset}_s{args.nsamples}_blk{args.seq_len}_g{args.num_groups}")
-        args.gradients_cache_path = (f"{args.cache_dir}/gradients/"
-                                    f"{args.model_name}-{args.dataset}_s{args.nsamples}_blk{args.seq_len}_g{args.num_groups}.pt")
-    else:
-        args.saliency_cache_path = None
-        args.gradients_cache_path = None
 
     transformers.set_seed(args.seed)
 
@@ -224,6 +230,5 @@ def parse_gen():
         debugpy.listen(5678 + dist_utils.get_rank())
         logging.info("Waiting for debugger attach")
         debugpy.wait_for_client()
-        # debugpy.breakpoint()
 
     return args

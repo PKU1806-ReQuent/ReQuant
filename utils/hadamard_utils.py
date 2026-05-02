@@ -105,8 +105,6 @@ def matmul_hadU_cuda(X, hadK, K):
     n = X.shape[-1]
     if K == 1:
         return HadamardTransform.apply(X.contiguous()) / torch.tensor(n).sqrt()
-    # if transpose:
-    #     hadK = hadK.T.contiguous()
     input = X.view(-1, K, n // K)
     input = HadamardTransform.apply(input.contiguous()) / torch.tensor(n).sqrt()
     input = hadK.to(input.device).to(input.dtype) @ input

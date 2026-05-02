@@ -18,8 +18,6 @@ from accelerate.hooks import remove_hook_from_module
 from gptq_utils import (
     gptq_utils,
     gptaq_utils,
-    gptq_guided_utils,
-    gptq_plus_utils,
 )
 from gptq_utils.dp_common import resolve_local_cuda_device
 from gptq_utils.gptq_dp_utils import gptq_fwrd_data_parallel
@@ -63,10 +61,6 @@ def quantize_weights(args, analyzer: model_utils.ModelAnalyzer):
                     )
                 else:
                     quantizers = gptaq_utils.gptq_fwrd(args, analyzer, trainloader, "cuda:0")
-            elif args.w_method == "gptq_guided":
-                quantizers = gptq_guided_utils.gptq_fwrd(args, analyzer, trainloader, "cuda:0")
-            elif args.w_method == "gptq_plus":
-                quantizers = gptq_plus_utils.gptq_fwrd(args, analyzer, trainloader, "cuda:0")
             elif args.w_method == "awq":
                 raise NotImplementedError(
                     "w_method=awq is currently implemented via the multi-GPU entry "

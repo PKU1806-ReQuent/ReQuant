@@ -18,6 +18,7 @@ def load_model(model_str_or_model):
     """Returns a model from a string or a model object. If a string is passed, it will be loaded from the HuggingFace"""
     if isinstance(model_str_or_model, str):
         config = AutoConfig.from_pretrained(model_str_or_model)
+        device_map = os.environ.get("MODEL_DEVICE_MAP", "cuda:0")
         process_word_embeddings = False
         if config.tie_word_embeddings:
             config.tie_word_embeddings = False  # TODO. disable tie_word_embeddings by default
@@ -27,8 +28,7 @@ def load_model(model_str_or_model):
             config=config,
             trust_remote_code=True,
             torch_dtype='auto',
-            device_map='cpu',
-            # attn_implementation='eager',
+            device_map=device_map,
         )
         model.tie_word_embeddings = process_word_embeddings
         if process_word_embeddings:
