@@ -20,7 +20,8 @@ def quantize_weights_rtn_dp(args, analyzer: model_utils.ModelAnalyzer, dataloade
     transformers.set_seed(args.seed)
 
     model = analyzer.model
-    model.cpu()
+    if not model_utils.keep_model_on_load_device():
+        model.cpu()
     remove_hook_from_module(model, recurse=True)
 
     if args.w_bits >= 16:
