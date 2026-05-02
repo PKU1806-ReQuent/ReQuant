@@ -254,32 +254,33 @@ run_awq_one() {
 # Inputs remain simple: model path, GPU list, and nproc.
 # ---------------------------------------------------------------------------
 
-# RTN examples:
+# Active set: QuaRot + ReQuant variants on top of 4 baselines (W4A4 @ Qwen3-14B).
+# Baselines (QuaRot only) were already finished and logged separately; this
+# run only produces the "+ ReQuant" counterparts for head-to-head comparison.
+#
+# Use RUN_ONLY="gptaq gptq rtn awq" (space-separated) to pick a subset.
+RUN_ONLY=${RUN_ONLY:-"gptaq gptq rtn awq"}
+
+if [[ " ${RUN_ONLY} " == *" gptaq "* ]]; then
+  run_gpt_one "gptaq" "GPTAQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
+fi
+if [[ " ${RUN_ONLY} " == *" gptq "* ]]; then
+  run_gpt_one "gptq" "GPTQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
+fi
+if [[ " ${RUN_ONLY} " == *" rtn "* ]]; then
+  run_one "RTN + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
+fi
+if [[ " ${RUN_ONLY} " == *" awq "* ]]; then
+  run_awq_one "AWQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
+fi
+
+# Ablation examples (commented out):
 # run_one "RTN ${RUN_PRECISION_TAG}" 0 0
 # run_one "RTN + ReQuant ${RUN_PRECISION_TAG}" 0 1
-# run_one "RTN + Rotate ${RUN_PRECISION_TAG}" 1 0
-# run_one "RTN + Rotate + ReQuant ${RUN_PRECISION_TAG}" 1 1
-
-# Default active runs: Llama2-7B W4A16 full ablations.
+# run_one "RTN + QuaRot ${RUN_PRECISION_TAG}" 1 0
 # run_gpt_one "gptaq" "GPTAQ ${RUN_PRECISION_TAG}" 0 0
-# run_gpt_one "gptaq" "GPTAQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
-# run_gpt_one "gptaq" "GPTAQ + QuaRot ${RUN_PRECISION_TAG}" 1 0
-# run_gpt_one "gptaq" "GPTAQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
-
 # run_gpt_one "gptq" "GPTQ ${RUN_PRECISION_TAG}" 0 0
-# run_gpt_one "gptq" "GPTQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
-# run_gpt_one "gptq" "GPTQ + QuaRot ${RUN_PRECISION_TAG}" 1 0
-# run_gpt_one "gptq" "GPTQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
-
-# run_one "RTN ${RUN_PRECISION_TAG}" 0 0
-# run_one "RTN + ReQuant ${RUN_PRECISION_TAG}" 0 1
-run_one "RTN + QuaRot ${RUN_PRECISION_TAG}" 1 0
-run_one "RTN + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
-
 # run_awq_one "AWQ ${RUN_PRECISION_TAG}" 0 0
-# run_awq_one "AWQ + ReQuant ${RUN_PRECISION_TAG}" 0 1
-run_awq_one "AWQ + QuaRot ${RUN_PRECISION_TAG}" 1 0
-run_awq_one "AWQ + QuaRot + ReQuant ${RUN_PRECISION_TAG}" 1 1
 
 # AWQ examples:
 # run_awq_one "AWQ ${RUN_PRECISION_TAG}" 0 0
