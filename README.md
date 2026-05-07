@@ -93,7 +93,7 @@ $\Delta q_j^\star = \arg\min_{\Delta q \in \mathcal G_j} \Delta L(\Delta q)$, an
 only if its predicted reduction exceeds the per-coordinate average reconstruction loss:
 
 $$
-\boxed{\quad \Delta L(\Delta q_j^\star) < -\,\frac{L(\mathbf{e})}{d_{\mathrm{col}}} \quad}
+\boxed{\quad \Delta L(\Delta q_j^\star) < 0 \quad}
 $$
 
 This threshold is necessary because $\widetilde{\mathbf H}$ and $\mathbf B$ are estimated from
